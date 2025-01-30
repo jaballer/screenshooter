@@ -1,0 +1,30 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Logs
+logs/
+*.log
+
+# Puppeteer Chromium cache
+puppeteer-cache/
+
+# Screenshot output directory
+screenshots/
+
+# Ignore user-specific CSV file
+websites.csv
+
+# Environment variables
+.env
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
