@@ -41,14 +41,8 @@ async function captureScreenshots(websites) {
     console.log(`Capturing: ${site.name} - ${site.url}`);
 
     try {
-      await page.setViewport({ width: SCREENSHOT_WIDTH, height: 1 });
+      await page.setViewport({ width: SCREENSHOT_WIDTH, height: 900 });
       await page.goto(site.url, { waitUntil: 'networkidle2', timeout: TIMEOUT });
-
-      // Adjust height dynamically based on content
-      const bodyHandle = await page.$('body');
-      const { height } = await bodyHandle.boundingBox();
-      await bodyHandle.dispose();
-      await page.setViewport({ width: SCREENSHOT_WIDTH, height: Math.ceil(height) });
 
       const screenshotPath = path.join(OUTPUT_DIR, `${site.name}.png`);
       await page.screenshot({ path: screenshotPath, fullPage: true });
