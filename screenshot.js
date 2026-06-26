@@ -6,7 +6,7 @@ const csv = require('csv-parser');
 
 // Load environment variables
 const SCREENSHOT_WIDTH = parseInt(process.env.SCREENSHOT_WIDTH) || 1440;
-const HEADLESS_MODE = process.env.HEADLESS_MODE === 'true';
+const HEADLESS_MODE = process.env.HEADLESS_MODE !== 'false';
 const TIMEOUT = parseInt(process.env.TIMEOUT) || 60000;
 const CSV_FILE = process.env.CSV_FILE || 'websites.csv';
 const OUTPUT_DIR = process.env.OUTPUT_DIR || 'screenshots';
