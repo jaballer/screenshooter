@@ -16,6 +16,17 @@ if (!fs.existsSync(OUTPUT_DIR)) {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 }
 
+// Sanitize a CSV name into a safe filename
+function sanitizeFilename(name) {
+  return name
+    .replace(/[\/\\]/g, '-')           // path separators → dash
+    .replace(/[<>:"|?*\x00-\x1f]/g, '-') // other dangerous/reserved chars → dash
+    .replace(/\.{2,}/g, '-')           // collapse .. to prevent path traversal
+    .replace(/-{2,}/g, '-')            // collapse runs of dashes
+    .replace(/^[\s-]+|[\s-]+$/g, '')   // strip leading/trailing whitespace and dashes
+    || 'unnamed';                       // fallback if everything was stripped
+}
+
 // Function to read URLs from CSV
 function readWebsitesFromCSV(filePath) {
   return new Promise((resolve, reject) => {
@@ -35,6 +46,7 @@ function readWebsitesFromCSV(filePath) {
 // Function to capture screenshots
 async function captureScreenshots(websites) {
   const browser = await puppeteer.launch({ headless: HEADLESS_MODE });
+  const usedFilenames = new Map(); // track sanitized names to handle collisions
 
   for (const site of websites) {
     const page = await browser.newPage();
@@ -50,7 +62,13 @@ async function captureScreenshots(websites) {
       await bodyHandle.dispose();
       await page.setViewport({ width: SCREENSHOT_WIDTH, height: Math.ceil(height) });
 
-      const screenshotPath = path.join(OUTPUT_DIR, `${site.name}.png`);
+      // Sanitize the name into a safe filename and resolve collisions
+      const baseName = sanitizeFilename(site.name);
+      const count = usedFilenames.get(baseName) || 0;
+      usedFilenames.set(baseName, count + 1);
+      const filename = count === 0 ? `${baseName}.png` : `${baseName}-${count}.png`;
+      const screenshotPath = path.join(OUTPUT_DIR, filename);
+
       await page.screenshot({ path: screenshotPath, fullPage: true });
       console.log(`Saved: ${screenshotPath}`);
     } catch (error) {
