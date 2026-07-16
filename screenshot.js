@@ -46,7 +46,7 @@ function readWebsitesFromCSV(filePath) {
 // Function to capture screenshots
 async function captureScreenshots(websites) {
   const browser = await puppeteer.launch({ headless: HEADLESS_MODE });
-  const usedFilenames = new Map(); // track sanitized names to handle collisions
+  const usedFilenames = new Set(); // track emitted filenames to handle collisions
 
   for (const site of websites) {
     const page = await browser.newPage();
@@ -62,11 +62,16 @@ async function captureScreenshots(websites) {
       await bodyHandle.dispose();
       await page.setViewport({ width: SCREENSHOT_WIDTH, height: Math.ceil(height) });
 
-      // Sanitize the name into a safe filename and resolve collisions
+      // Sanitize the name into a safe filename and resolve collisions by
+      // probing for the first candidate that hasn't already been emitted.
       const baseName = sanitizeFilename(site.name);
-      const count = usedFilenames.get(baseName) || 0;
-      usedFilenames.set(baseName, count + 1);
-      const filename = count === 0 ? `${baseName}.png` : `${baseName}-${count}.png`;
+      let filename = `${baseName}.png`;
+      let count = 1;
+      while (usedFilenames.has(filename)) {
+        filename = `${baseName}-${count}.png`;
+        count += 1;
+      }
+      usedFilenames.add(filename);
       const screenshotPath = path.join(OUTPUT_DIR, filename);
 
       await page.screenshot({ path: screenshotPath, fullPage: true });
