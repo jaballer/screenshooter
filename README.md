@@ -79,10 +79,10 @@ Captured screenshots will be saved in the `screenshots/` folder (or the folder s
 - Screenshots are captured after the page reaches the `networkidle2` state (when there are no more than 2 network connections for at least 500ms)
 - Failed screenshots are logged to console but won't stop the process
 - The tool automatically adjusts screenshot height based on page content
-- Screenshots are saved as PNG files using the 'name' field from the CSV as the filename
+- Screenshots are saved as PNG files, using the 'name' field from the CSV as the filename
+- Filenames are automatically sanitized (unsafe characters replaced) and duplicate names get a numeric suffix, so no special-character handling is required in the CSV
 
 ## Known Limitations
-- The 'name' field in the CSV is used directly as the filename - avoid special characters
 - Very long pages might require increased memory allocation
 - Some websites might block automated access
 - Dynamic content loading might require additional wait time
