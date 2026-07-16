@@ -64,14 +64,16 @@ async function captureScreenshots(websites) {
 
       // Sanitize the name into a safe filename and resolve collisions by
       // probing for the first candidate that hasn't already been emitted.
+      // Keys are lowercased since Windows and default macOS filesystems
+      // treat filenames case-insensitively.
       const baseName = sanitizeFilename(site.name);
       let filename = `${baseName}.png`;
       let count = 1;
-      while (usedFilenames.has(filename)) {
+      while (usedFilenames.has(filename.toLowerCase())) {
         filename = `${baseName}-${count}.png`;
         count += 1;
       }
-      usedFilenames.add(filename);
+      usedFilenames.add(filename.toLowerCase());
       const screenshotPath = path.join(OUTPUT_DIR, filename);
 
       await page.screenshot({ path: screenshotPath, fullPage: true });
