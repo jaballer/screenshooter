@@ -75,6 +75,18 @@ test('duplicate names get unique filenames, and failed sites do not use one up',
   assert.deepEqual(summary.results.map((r) => r.file), ['Docs.png', undefined, 'docs-1.png']);
 });
 
+test('a very long name still produces a file the filesystem accepts', async (t) => {
+  const dir = makeTempDir(t);
+  const { launch } = createFakeLaunch();
+  const url = `https://example.com/${'deep-path/'.repeat(40)}`;
+  const sites = [{ name: `example.com/${'deep-path/'.repeat(40)}`, url }];
+
+  const summary = await captureSites(sites, baseOptions(dir, launch));
+
+  assert.equal(summary.saved, 1, summary.results[0].error);
+  assert.ok(fs.existsSync(summary.results[0].path));
+});
+
 test('aborting stops the run, closes the browser and marks the site in progress', async (t) => {
   const dir = makeTempDir(t);
   const controller = new AbortController();

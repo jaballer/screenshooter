@@ -135,8 +135,23 @@ test('get rejects bad IDs and reports runs left running as interrupted', (t) => 
 
   const id = '20260101-000000-abcd';
   fs.mkdirSync(path.join(dir, id));
-  fs.writeFileSync(path.join(dir, id, 'run.json'), JSON.stringify({ id, status: 'running', sites: [] }));
-  assert.equal(runs.get(id).status, 'interrupted');
+  fs.writeFileSync(path.join(dir, id, 'run.json'), JSON.stringify({
+    id,
+    status: 'running',
+    source: { type: 'urls' },
+    startedAt: '2026-01-01T00:00:00.000Z',
+    sites: [
+      { name: 'Done', status: 'saved', file: 'Done.png', error: null },
+      { name: 'Midway', status: 'capturing', file: null, error: null },
+      { name: 'Queued', status: 'pending', file: null, error: null },
+    ],
+  }));
+
+  const run = runs.get(id);
+  assert.equal(run.status, 'interrupted');
+  assert.deepEqual(run.sites.map((s) => s.status), ['saved', 'failed', 'failed']);
+  assert.equal(run.sites[1].error, 'The server stopped before this site was captured');
+  assert.deepEqual(runs.list().map((r) => [r.status, r.saved, r.failed]), [['interrupted', 1, 2]]);
 });
 
 test('list returns run folders newest first and ignores everything else', async (t) => {

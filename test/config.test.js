@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { loadConfig, validateRunOptions, DEFAULTS } = require('../src/config');
+const { loadConfig, runDefaults, validateRunOptions, DEFAULTS } = require('../src/config');
 
 test('loadConfig uses defaults when nothing is set', () => {
   assert.deepEqual(loadConfig({}), DEFAULTS);
@@ -22,6 +22,20 @@ test('loadConfig is headless unless HEADLESS_MODE is exactly "false"', () => {
   assert.equal(loadConfig({ HEADLESS_MODE: 'true' }).headless, true);
   assert.equal(loadConfig({ HEADLESS_MODE: 'yes' }).headless, true);
   assert.equal(loadConfig({ HEADLESS_MODE: 'false' }).headless, false);
+});
+
+test('runDefaults keeps in-range settings', () => {
+  assert.deepEqual(runDefaults(loadConfig({ SCREENSHOT_WIDTH: '1920', TIMEOUT: '5000', HEADLESS_MODE: 'false' })), {
+    width: 1920, timeout: 5000, headless: false,
+  });
+});
+
+test('runDefaults pulls out-of-range settings into the web UI range', () => {
+  const tooBig = runDefaults(loadConfig({ SCREENSHOT_WIDTH: '5000', TIMEOUT: '600000' }));
+  assert.deepEqual(tooBig, { width: 3840, timeout: 300000, headless: true });
+  const tooSmall = runDefaults(loadConfig({ SCREENSHOT_WIDTH: '100', TIMEOUT: '-5' }));
+  assert.deepEqual(tooSmall, { width: 320, timeout: 1000, headless: true });
+  assert.deepEqual(validateRunOptions(undefined, tooBig).errors, []);
 });
 
 test('validateRunOptions fills in defaults', () => {

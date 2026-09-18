@@ -1,7 +1,7 @@
 const http = require('http');
 const path = require('path');
 const express = require('express');
-const { loadConfig, validateRunOptions, LIMITS } = require('./src/config');
+const { loadConfig, runDefaults, validateRunOptions, LIMITS, MAX_SITES_PER_RUN } = require('./src/config');
 const { parseUrlList, parseCsv, InputError } = require('./src/sites');
 const { RunManager, RunInProgressError } = require('./src/runs');
 
@@ -25,6 +25,7 @@ function describeSource(type, filename) {
 }
 
 function createApp({ config, runs }) {
+  const defaults = runDefaults(config);
   const app = express();
   app.disable('x-powered-by');
 
@@ -57,8 +58,7 @@ function createApp({ config, runs }) {
   api.use(express.json({ limit: '10mb' }));
 
   api.get('/config', (req, res) => {
-    const { width, timeout, headless } = config;
-    res.json({ defaults: { width, timeout, headless }, limits: LIMITS });
+    res.json({ defaults, limits: LIMITS });
   });
 
   api.get('/runs', (req, res) => {
@@ -74,7 +74,7 @@ function createApp({ config, runs }) {
       return res.status(400).json({ error: 'text must be a string' });
     }
 
-    const { options: runOptions, errors } = validateRunOptions(options, config);
+    const { options: runOptions, errors } = validateRunOptions(options, defaults);
     if (errors.length > 0) {
       return res.status(400).json({ error: errors.join('. ') });
     }
@@ -88,6 +88,13 @@ function createApp({ config, runs }) {
     }
     if (parsed.sites.length === 0) {
       return res.status(400).json({ error: 'No valid URLs found', skipped: parsed.skipped });
+    }
+    if (parsed.sites.length > MAX_SITES_PER_RUN) {
+      const count = parsed.sites.length.toLocaleString('en-US');
+      const max = MAX_SITES_PER_RUN.toLocaleString('en-US');
+      return res.status(400).json({
+        error: `That's ${count} sites. The web app captures up to ${max} per run, so split the list or use the command line (npm run capture) for bigger batches.`,
+      });
     }
 
     try {
@@ -177,6 +184,13 @@ if (require.main === module) {
   require('dotenv').config();
   const config = loadConfig();
   const runs = new RunManager({ outputDir: config.outputDir });
+
+  const defaults = runDefaults(config);
+  for (const [key, envVar] of [['width', 'SCREENSHOT_WIDTH'], ['timeout', 'TIMEOUT']]) {
+    if (defaults[key] !== config[key]) {
+      console.warn(`${envVar}=${config[key]} is outside the web app's range, so web runs will default to ${defaults[key]}.`);
+    }
+  }
   const server = http.createServer(createApp({ config, runs }));
 
   server.on('error', (error) => {

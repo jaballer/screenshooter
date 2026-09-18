@@ -39,7 +39,7 @@ Then open [http://localhost:5055](http://localhost:5055). From there you can:
 - Set the width, timeout, and headless mode for the run, then start it.
 - Watch each site's progress live, cancel a run, and browse past runs in the History sidebar.
 
-Each web run saves its screenshots in its own folder, `screenshots/<run-id>/`, next to a `run.json` file recording what happened. The server only accepts connections from your own computer.
+Each web run saves its screenshots in its own folder, `screenshots/<run-id>/`, next to a `run.json` file recording what happened. A web run can hold up to 1,000 sites; use the command line for bigger batches. The server only accepts connections from your own computer.
 
 ### Command line
 
@@ -102,7 +102,7 @@ Captured screenshots will be saved in the `screenshots/` folder (or the folder s
 - Failed screenshots are logged but won't stop the run
 - The tool automatically adjusts screenshot height based on page content
 - Screenshots are saved as PNG files, using the site's name as the filename
-- Filenames are automatically sanitized (unsafe characters replaced) and duplicate names get a numeric suffix, so no special-character handling is required in the CSV
+- Filenames are automatically sanitized (unsafe characters replaced, very long names shortened) and duplicate names get a numeric suffix, so no special-character handling is required in the CSV
 - Only `http` and `https` URLs are captured. Domains without a scheme get `https://`, and local addresses (`localhost`, private IPs, `.test`) get `http://`. Rows that can't be used are skipped and listed with the reason
 - CSV headers are matched case-insensitively, and files saved with a byte-order mark (for example from Excel) work
 

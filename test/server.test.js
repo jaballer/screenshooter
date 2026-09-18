@@ -28,10 +28,10 @@ function fakeCapture(gate) {
   };
 }
 
-async function startServer(t, { gate } = {}) {
+async function startServer(t, { gate, config = {} } = {}) {
   const dir = makeTempDir(t);
   const runs = new RunManager({ outputDir: dir, capture: fakeCapture(gate) });
-  const server = http.createServer(createApp({ config: { ...DEFAULTS }, runs }));
+  const server = http.createServer(createApp({ config: { ...DEFAULTS, ...config }, runs }));
   const port = await listen(server);
   t.after(() => {
     server.closeAllConnections();
@@ -77,6 +77,27 @@ test('reports defaults and limits', async (t) => {
   const res = await request(port, { path: '/api/config' });
   assert.deepEqual(res.json.defaults, { width: 1440, timeout: 60000, headless: true });
   assert.deepEqual(res.json.limits.width, { min: 320, max: 3840 });
+});
+
+test('out-of-range settings from .env still give the UI valid defaults', async (t) => {
+  const { port } = await startServer(t, { config: { width: 5000, timeout: 600000 } });
+
+  const config = await request(port, { path: '/api/config' });
+  assert.deepEqual(config.json.defaults, { width: 3840, timeout: 300000, headless: true });
+
+  const res = await startRun(port, { source: 'urls', text: 'github.com' });
+  assert.equal(res.status, 202, res.text);
+  assert.deepEqual(res.json.run.options, { width: 3840, timeout: 300000, headless: true });
+});
+
+test('refuses web runs over the site limit', async (t) => {
+  const { port, runs } = await startServer(t);
+  const text = Array.from({ length: 1001 }, (_, i) => `site${i}.example`).join('\n');
+
+  const res = await startRun(port, { source: 'urls', text });
+  assert.equal(res.status, 400);
+  assert.match(res.json.error, /That's 1,001 sites\. The web app captures up to 1,000 per run/);
+  assert.deepEqual(runs.list(), []);
 });
 
 test('POSTs must be JSON from a localhost origin', async (t) => {

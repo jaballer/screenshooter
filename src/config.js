@@ -13,6 +13,10 @@ const LIMITS = {
   timeout: { min: 1000, max: 300000 },
 };
 
+// Web runs rewrite run.json and stream the whole run on every change, so the
+// cost grows with the square of the site count. The CLI has no such limit.
+const MAX_SITES_PER_RUN = 1000;
+
 // Read settings from environment variables (normally loaded from .env)
 function loadConfig(env = process.env) {
   return {
@@ -25,8 +29,19 @@ function loadConfig(env = process.env) {
   };
 }
 
-// Validate per-run options sent by the web UI. Missing fields fall back to the
-// configured defaults; anything present must be the right type and in range.
+// The web UI's starting options: the configured values, pulled into the range
+// the UI accepts so an unusual .env can't make every web run invalid
+function runDefaults(config) {
+  const clamp = (value, { min, max }) => Math.min(Math.max(value, min), max);
+  return {
+    width: clamp(config.width, LIMITS.width),
+    timeout: clamp(config.timeout, LIMITS.timeout),
+    headless: config.headless,
+  };
+}
+
+// Validate per-run options sent by the web UI. Missing fields fall back to
+// `defaults` (see runDefaults); anything present must be the right type and in range.
 function validateRunOptions(input, defaults) {
   const source = input && typeof input === 'object' ? input : {};
   const errors = [];
@@ -50,4 +65,4 @@ function validateRunOptions(input, defaults) {
   return { options: { width, timeout, headless }, errors };
 }
 
-module.exports = { DEFAULTS, LIMITS, loadConfig, validateRunOptions };
+module.exports = { DEFAULTS, LIMITS, MAX_SITES_PER_RUN, loadConfig, runDefaults, validateRunOptions };

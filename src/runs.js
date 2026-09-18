@@ -35,6 +35,20 @@ function summarize(run) {
   };
 }
 
+// Sites a finished run never got to: cancelled if the run was cancelled,
+// otherwise failed with `reason`
+function settleUnfinishedSites(run, reason) {
+  for (const site of run.sites) {
+    if (site.status !== 'pending' && site.status !== 'capturing') continue;
+    if (run.status === 'cancelled') {
+      site.status = 'cancelled';
+    } else {
+      site.status = 'failed';
+      site.error = reason;
+    }
+  }
+}
+
 class RunInProgressError extends Error {
   constructor(runId) {
     super('A capture is already running');
@@ -137,13 +151,7 @@ class RunManager extends EventEmitter {
   }
 
   finish(run) {
-    // Sites the run never reached
-    for (const site of run.sites) {
-      if (site.status === 'pending' || site.status === 'capturing') {
-        site.status = run.status === 'cancelled' ? 'cancelled' : 'failed';
-        if (site.status === 'failed') site.error = run.error || 'Not captured';
-      }
-    }
+    settleUnfinishedSites(run, run.error || 'Not captured');
     run.finishedAt = new Date().toISOString();
     this.active = null;
     this.save(run);
@@ -174,7 +182,10 @@ class RunManager extends EventEmitter {
     // A hand-edited or truncated record shouldn't break the history list
     if (!run || !Array.isArray(run.sites)) return null;
     // Marked running on disk but not running here: the server stopped mid-run
-    if (run.status === 'running') run.status = 'interrupted';
+    if (run.status === 'running') {
+      run.status = 'interrupted';
+      settleUnfinishedSites(run, 'The server stopped before this site was captured');
+    }
     return run;
   }
 

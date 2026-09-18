@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { sanitizeFilename, createFilenameAllocator } = require('../src/filenames');
+const { sanitizeFilename, createFilenameAllocator, MAX_BASENAME_BYTES } = require('../src/filenames');
 
 test('sanitizeFilename keeps ordinary names', () => {
   assert.equal(sanitizeFilename('VS Code'), 'VS Code');
@@ -21,6 +21,23 @@ test('sanitizeFilename replaces reserved and control characters', () => {
 test('sanitizeFilename falls back when nothing is left', () => {
   assert.equal(sanitizeFilename('///'), 'unnamed');
   assert.equal(sanitizeFilename('   '), 'unnamed');
+});
+
+test('sanitizeFilename caps long names below the filesystem limit', () => {
+  assert.equal(sanitizeFilename('a'.repeat(300)), 'a'.repeat(MAX_BASENAME_BYTES));
+  // Multi-byte characters are counted in bytes and never split
+  assert.equal(sanitizeFilename('é'.repeat(150)), 'é'.repeat(100));
+  assert.equal(sanitizeFilename('📸'.repeat(60)), '📸'.repeat(50));
+  // A dot left at the end by the cut is dropped
+  assert.equal(sanitizeFilename(`${'a'.repeat(199)}.b`), 'a'.repeat(199));
+});
+
+test('allocator suffixes stay under 255 bytes for long names', () => {
+  const allocate = createFilenameAllocator();
+  allocate('x'.repeat(400));
+  const second = allocate('x'.repeat(400));
+  assert.equal(second, `${'x'.repeat(MAX_BASENAME_BYTES)}-1.png`);
+  assert.ok(Buffer.byteLength(second) <= 255);
 });
 
 test('allocator suffixes duplicate names', () => {
