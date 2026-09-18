@@ -66,6 +66,13 @@ test('allocator never reuses a name that already looks like a suffix', () => {
   assert.equal(allocate('foo'), 'foo-2.png');
 });
 
+test('allocator never hands out a reserved filename', () => {
+  const allocate = createFilenameAllocator(['Docs.png', 'GITHUB.PNG']);
+  assert.equal(allocate('Docs'), 'Docs-1.png');
+  assert.equal(allocate('github'), 'github-1.png');
+  assert.equal(allocate('React'), 'React.png');
+});
+
 test('each allocator is independent', () => {
   assert.equal(createFilenameAllocator()('a'), 'a.png');
   assert.equal(createFilenameAllocator()('a'), 'a.png');

@@ -85,7 +85,13 @@ function summarize(run) {
     total: run.sites.length,
     saved: count('saved'),
     failed: count('failed'),
+    cancelled: count('cancelled'),
   };
+}
+
+// " · 2 failed · 1 cancelled", or '' when nothing went wrong
+function problemCounts(failed, cancelled) {
+  return `${failed ? ` · ${failed} failed` : ''}${cancelled ? ` · ${cancelled} cancelled` : ''}`;
 }
 
 const RUN_STATUS_LABELS = {
@@ -140,6 +146,7 @@ function showNewRun() {
 async function showRun(id) {
   closeStream();
   state.currentRunId = id;
+  $('#retry-error').hidden = true;
   renderRunList();
 
   let run;
@@ -154,6 +161,16 @@ async function showRun(id) {
   showView('run');
   renderRun(run);
   if (run.status === 'running') openStream(id);
+}
+
+// Re-fetch the run being shown, and follow it live if it's running again
+async function refreshCurrentRun() {
+  const id = state.currentRunId;
+  if (!id || $('#run-view').hidden) return;
+  const { run } = await api(`/runs/${encodeURIComponent(id)}`);
+  if (state.currentRunId !== id) return; // navigated away meanwhile
+  renderRun(run);
+  if (run.status === 'running' && !state.stream) openStream(id);
 }
 
 function openStream(id) {
@@ -196,8 +213,8 @@ function renderRunList() {
   list.replaceChildren(...state.runs.map((run) => {
     const dotClass = run.status === 'completed' && run.failed > 0 ? 'has-failures' : run.status;
     const counts = run.status === 'running'
-      ? `${run.saved + run.failed} of ${run.total}`
-      : `${plural(run.saved, 'shot')}${run.failed ? ` · ${run.failed} failed` : ''}`;
+      ? `${run.saved + run.failed + run.cancelled} of ${run.total}`
+      : `${plural(run.saved, 'shot')}${problemCounts(run.failed, run.cancelled)}`;
     return h('li', {},
       h('a', { class: 'run-link', href: `#/runs/${run.id}`, 'aria-current': run.id === state.currentRunId ? 'page' : null },
         h('span', { class: `dot ${dotClass}`, title: RUN_STATUS_LABELS[run.status] || run.status }),
@@ -214,6 +231,7 @@ function renderRun(run) {
   const done = run.sites.filter((site) => !['pending', 'capturing'].includes(site.status)).length;
   const saved = run.sites.filter((site) => site.status === 'saved').length;
   const failed = run.sites.filter((site) => site.status === 'failed').length;
+  const cancelled = run.sites.filter((site) => site.status === 'cancelled').length;
   const running = run.status === 'running';
 
   $('#run-title').textContent = sourceLabel(run.source);
@@ -234,10 +252,16 @@ function renderRun(run) {
   cancel.textContent = run.cancelRequested ? 'Cancelling…' : 'Cancel';
   cancel.dataset.runId = run.id;
 
+  const retryCount = running ? 0 : run.sites.filter(isRetryable).length;
+  const retryAll = $('#retry-all-button');
+  retryAll.hidden = retryCount === 0;
+  retryAll.disabled = false;
+  retryAll.textContent = `Retry ${plural(retryCount, 'site')}`;
+
   $('#progress-bar').style.width = `${run.sites.length ? (done / run.sites.length) * 100 : 0}%`;
   $('#progress-text').textContent = running
-    ? `${done} of ${run.sites.length} done · ${saved} saved${failed ? ` · ${failed} failed` : ''}`
-    : `${saved} saved${failed ? ` · ${failed} failed` : ''}${run.finishedAt ? ` · finished ${formatDate(run.finishedAt)}` : ''}`;
+    ? `${done} of ${run.sites.length} done · ${saved} saved${problemCounts(failed, cancelled)}`
+    : `${saved} saved${problemCounts(failed, cancelled)}${run.finishedAt ? ` · finished ${formatDate(run.finishedAt)}` : ''}`;
 
   const runError = $('#run-error');
   runError.hidden = !run.error;
@@ -267,17 +291,18 @@ function renderSites(run) {
     grid.dataset.runId = run.id;
   }
   run.sites.forEach((site, index) => {
-    const key = [site.status, site.file, site.error].join('|');
+    const canRetry = run.status !== 'running' && isRetryable(site);
+    const key = [site.status, site.file, site.error, canRetry].join('|');
     const existing = grid.children[index];
     if (existing && existing.dataset.key === key) return;
-    const card = siteCard(run.id, site, index);
+    const card = siteCard(run.id, site, index, canRetry);
     card.dataset.key = key;
     if (existing) existing.replaceWith(card);
     else grid.append(card);
   });
 }
 
-function siteCard(runId, site, index) {
+function siteCard(runId, site, index, canRetry) {
   let thumb;
   if (site.status === 'saved') {
     const src = screenshotUrl(runId, site.file);
@@ -297,7 +322,14 @@ function siteCard(runId, site, index) {
       cancelled: 'Cancelled',
     }[site.status];
     thumb = h('div', { class: 'thumb placeholder' },
-      h('span', {}, site.status === 'capturing' && h('span', { class: 'spinner', 'aria-hidden': 'true' }), label));
+      h('span', {}, site.status === 'capturing' && h('span', { class: 'spinner', 'aria-hidden': 'true' }), label),
+      canRetry && h('button', {
+        type: 'button',
+        class: 'button small',
+        'data-retry': true,
+        'aria-label': `Retry ${site.name}`,
+        onclick: () => retrySites([index]),
+      }, 'Retry'));
   }
 
   const safeHref = /^https?:\/\//i.test(site.url) ? site.url : null;
@@ -309,6 +341,49 @@ function siteCard(runId, site, index) {
         h('span', { class: `pill ${site.status}` }, SITE_STATUS_LABELS[site.status] || site.status)),
       h('a', { class: 'card-url', href: safeHref, target: '_blank', rel: 'noopener noreferrer', title: site.url }, displayUrl(site.url)),
       site.error && h('p', { class: 'card-error' }, site.error)));
+}
+
+// Retrying failed sites. The server captures them again into the same run and
+// the progress stream fills their cards back in.
+
+function isRetryable(site) {
+  return site.status === 'failed' || site.status === 'cancelled';
+}
+
+// Retry the sites at `indexes`, or every failed and cancelled site if omitted
+async function retrySites(indexes) {
+  const run = state.run;
+  if (!run) return;
+  const buttons = document.querySelectorAll('[data-retry]');
+  for (const button of buttons) button.disabled = true; // no double submits
+  $('#retry-error').hidden = true;
+
+  try {
+    const { run: updated } = await api(`/runs/${encodeURIComponent(run.id)}/retry`, {
+      method: 'POST',
+      body: indexes ? { sites: indexes } : {},
+    });
+    if (state.currentRunId !== updated.id) return; // navigated away meanwhile
+    renderRun(updated);
+    updateRunSummary(updated);
+    closeStream();
+    openStream(updated.id);
+  } catch (error) {
+    for (const button of buttons) button.disabled = false;
+    showRetryError(error);
+    // Most likely the run changed elsewhere (retried from another tab), so
+    // show what it looks like now
+    refreshCurrentRun().catch(() => {});
+  }
+}
+
+function showRetryError(error) {
+  const box = $('#retry-error');
+  box.replaceChildren(h('p', {}, `Couldn’t retry: ${error.message}`));
+  if (error.status === 409 && error.data?.activeRunId) {
+    box.append(h('p', {}, h('a', { href: `#/runs/${error.data.activeRunId}` }, 'View the capture in progress')));
+  }
+  box.hidden = false;
 }
 
 // Screenshot viewer: a modal carousel over the current run's saved screenshots.
@@ -569,6 +644,7 @@ function bindForm({ defaults, limits }) {
 
   $('#new-run-form').addEventListener('submit', startCapture);
   $('#cancel-button').addEventListener('click', cancelRun);
+  $('#retry-all-button').addEventListener('click', () => retrySites());
 }
 
 async function init() {
@@ -588,7 +664,11 @@ init().catch((error) => {
 });
 
 // Keep the history fresh when coming back to the tab
+// Keep the history and the open run fresh when coming back to the tab, e.g.
+// after retrying this run from another tab. Best effort: if the server is
+// down, things just stay as they were.
 document.addEventListener('visibilitychange', () => {
-  // Best effort: if the server is down, the list just stays as it was
-  if (document.visibilityState === 'visible') refreshRunList().catch(() => {});
+  if (document.visibilityState !== 'visible') return;
+  refreshRunList().catch(() => {});
+  refreshCurrentRun().catch(() => {});
 });

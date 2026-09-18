@@ -30,9 +30,10 @@ function sanitizeFilename(name) {
 // Returns a function that turns a site name into a unique PNG filename for one
 // run. Collisions are resolved by probing for the first candidate that hasn't
 // already been emitted. Keys are lowercased since Windows and default macOS
-// filesystems treat filenames case-insensitively.
-function createFilenameAllocator() {
-  const usedFilenames = new Set();
+// filesystems treat filenames case-insensitively. `reserved` lists filenames
+// already taken, e.g. by earlier screenshots when retrying part of a run.
+function createFilenameAllocator(reserved = []) {
+  const usedFilenames = new Set(reserved.map((filename) => filename.toLowerCase()));
 
   return function allocateFilename(name) {
     const baseName = sanitizeFilename(name);

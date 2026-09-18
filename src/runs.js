@@ -32,6 +32,7 @@ function summarize(run) {
     total: run.sites.length,
     saved: count('saved'),
     failed: count('failed'),
+    cancelled: count('cancelled'),
   };
 }
 
@@ -56,6 +57,9 @@ class RunInProgressError extends Error {
   }
 }
 
+// A retry request that doesn't fit the run (wrong site, nothing failed)
+class InvalidRetryError extends Error {}
+
 // Runs web-UI captures one at a time. Each run gets its own folder under
 // outputDir holding the screenshots and a run.json record that is rewritten as
 // progress arrives, so history survives server restarts. Emits 'update' (run)
@@ -72,7 +76,7 @@ class RunManager extends EventEmitter {
   start({ sites, skipped = [], options, source }) {
     if (this.active) throw new RunInProgressError(this.active.run.id);
 
-    const { id, runDir } = this.createRunDir();
+    const { id } = this.createRunDir();
 
     const run = {
       id,
@@ -93,13 +97,59 @@ class RunManager extends EventEmitter {
         durationMs: null,
       })),
     };
+    this.execute(run, run.sites.map((site, index) => index));
+    return run;
+  }
+
+  // Capture some of a finished run's sites again, into the same folder. With
+  // no `indexes`, retries every site that failed or was cancelled.
+  retry(id, indexes) {
+    if (this.active) throw new RunInProgressError(this.active.run.id);
+    const run = this.get(id);
+    if (!run) return null;
+
+    const retryable = (site) => site.status === 'failed' || site.status === 'cancelled';
+    const chosen = indexes === undefined
+      ? run.sites.flatMap((site, index) => (retryable(site) ? [index] : []))
+      : [...new Set(indexes)];
+    if (chosen.length === 0) throw new InvalidRetryError('There are no failed sites to retry');
+    for (const index of chosen) {
+      const site = run.sites[index];
+      if (!site) throw new InvalidRetryError(`This run has no site number ${index}`);
+      if (!retryable(site)) throw new InvalidRetryError(`"${site.name}" doesn't need a retry (it's ${site.status})`);
+    }
+
+    for (const index of chosen) {
+      Object.assign(run.sites[index], { status: 'pending', file: null, error: null, durationMs: null });
+    }
+    Object.assign(run, { status: 'running', finishedAt: null, cancelRequested: false, error: null });
+    this.execute(run, chosen);
+    return run;
+  }
+
+  // Capture run.sites at `indexes` in the run's folder, mapping progress events
+  // back onto those sites, then finish the run
+  execute(run, indexes) {
     const controller = new AbortController();
     this.active = { run, controller };
     this.save(run);
+    this.emit('update', run);
 
-    const onEvent = (event) => this.applyEvent(run, event);
+    const sites = indexes.map((index) => ({ name: run.sites[index].name, url: run.sites[index].url }));
+    // Screenshots already in the folder keep their names
+    const reservedFilenames = run.sites
+      .filter((site) => site.status === 'saved' && site.file)
+      .map((site) => site.file);
+    const onEvent = (event) => this.applyEvent(run, { ...event, index: indexes[event.index] });
+
     Promise.resolve()
-      .then(() => this.capture(sites, { ...options, outputDir: runDir, signal: controller.signal, onEvent }))
+      .then(() => this.capture(sites, {
+        ...run.options,
+        outputDir: path.join(this.outputDir, run.id),
+        signal: controller.signal,
+        reservedFilenames,
+        onEvent,
+      }))
       .then((summary) => {
         run.status = summary.cancelled ? 'cancelled' : 'completed';
       })
@@ -108,9 +158,7 @@ class RunManager extends EventEmitter {
         run.error = error.message;
       })
       .finally(() => this.finish(run))
-      .catch((error) => console.error(`Run ${id} listener failed:`, error));
-
-    return run;
+      .catch((error) => console.error(`Run ${run.id} listener failed:`, error));
   }
 
   // Create the run's folder exclusively, so two runs can never share one even
@@ -152,6 +200,11 @@ class RunManager extends EventEmitter {
 
   finish(run) {
     settleUnfinishedSites(run, run.error || 'Not captured');
+    // A run is only complete once no site is left cancelled; retrying some of
+    // a cancelled run's sites leaves the rest still to do
+    if (run.status === 'completed' && run.sites.some((site) => site.status === 'cancelled')) {
+      run.status = 'cancelled';
+    }
     run.finishedAt = new Date().toISOString();
     this.active = null;
     this.save(run);
@@ -217,4 +270,4 @@ class RunManager extends EventEmitter {
   }
 }
 
-module.exports = { RunManager, RunInProgressError, isValidRunId, createRunId };
+module.exports = { RunManager, RunInProgressError, InvalidRetryError, isValidRunId, createRunId };

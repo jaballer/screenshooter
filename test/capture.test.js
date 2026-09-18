@@ -75,6 +75,17 @@ test('duplicate names get unique filenames, and failed sites do not use one up',
   assert.deepEqual(summary.results.map((r) => r.file), ['Docs.png', undefined, 'docs-1.png']);
 });
 
+test('reserved filenames are left alone', async (t) => {
+  const dir = makeTempDir(t);
+  fs.writeFileSync(path.join(dir, 'One.png'), 'earlier screenshot');
+  const { launch } = createFakeLaunch();
+
+  const summary = await captureSites(SITES.slice(0, 1), baseOptions(dir, launch, { reservedFilenames: ['One.png'] }));
+
+  assert.equal(summary.results[0].file, 'One-1.png');
+  assert.equal(fs.readFileSync(path.join(dir, 'One.png'), 'utf8'), 'earlier screenshot');
+});
+
 test('a very long name still produces a file the filesystem accepts', async (t) => {
   const dir = makeTempDir(t);
   const { launch } = createFakeLaunch();
