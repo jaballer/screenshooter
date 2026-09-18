@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ScreenShooter</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📸</text></svg>">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/new"><span aria-hidden="true">📸</span> ScreenShooter</a>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" aria-label="Capture history">
+      <a class="button primary block" href="#/new">New capture</a>
+      <h2 class="sidebar-heading">History</h2>
+      <ul id="run-list" class="run-list"></ul>
+    </aside>
+
+    <main>
+      <section id="new-run-view" class="view" hidden>
+        <form id="new-run-form" novalidate>
+          <h1>New capture</h1>
+          <p class="muted lead">Full-page screenshots of every site, saved to a folder for this run.</p>
+
+          <div class="segmented" role="tablist" aria-label="Where the sites come from">
+            <button type="button" role="tab" id="tab-urls" data-source="urls" aria-selected="true" aria-controls="panel-urls">Paste URLs</button>
+            <button type="button" role="tab" id="tab-csv" data-source="csv" aria-selected="false" aria-controls="panel-csv">Upload CSV</button>
+          </div>
+
+          <div id="panel-urls" class="panel" role="tabpanel" aria-labelledby="tab-urls">
+            <label class="field-label" for="urls">URLs</label>
+            <textarea id="urls" rows="9" spellcheck="false" placeholder="github.com&#10;React, https://react.dev&#10;localhost:3000"></textarea>
+            <p class="hint">One per line. Put a name first (<code>Name, URL</code>) to choose the filename.</p>
+          </div>
+
+          <div id="panel-csv" class="panel" role="tabpanel" aria-labelledby="tab-csv" hidden>
+            <label id="dropzone" class="dropzone" for="csv-file">
+              <input type="file" id="csv-file" accept=".csv,text/csv" class="visually-hidden">
+              <span class="dropzone-title">Choose a CSV file or drop it here</span>
+              <span class="hint">Needs a <code>url</code> column. A <code>name</code> column is optional.</span>
+              <span id="csv-summary" class="dropzone-file" hidden></span>
+            </label>
+          </div>
+
+          <fieldset class="options">
+            <legend>Options</legend>
+            <div class="option-grid">
+              <label class="field">
+                <span class="field-label">Width</span>
+                <span class="input-with-unit"><input type="number" id="width" required step="1" inputmode="numeric"><span>px</span></span>
+              </label>
+              <label class="field">
+                <span class="field-label">Timeout per site</span>
+                <span class="input-with-unit"><input type="number" id="timeout" required step="1" inputmode="numeric"><span>sec</span></span>
+              </label>
+            </div>
+            <label class="check">
+              <input type="checkbox" id="headless">
+              <span>
+                <span class="check-title">Headless</span>
+                <span class="hint">Capture in the background. Turn off to watch Chrome open each site.</span>
+              </span>
+            </label>
+          </fieldset>
+
+          <div id="form-error" class="alert error" role="alert" hidden></div>
+
+          <button type="submit" id="start-button" class="button primary large">Start capture</button>
+        </form>
+      </section>
+
+      <section id="run-view" class="view" hidden>
+        <div class="run-header">
+          <div class="run-heading">
+            <h1 id="run-title"></h1>
+            <p id="run-meta" class="muted"></p>
+          </div>
+          <div class="run-actions">
+            <span id="run-status" class="badge"></span>
+            <button type="button" id="cancel-button" class="button" hidden>Cancel</button>
+          </div>
+        </div>
+
+        <div class="progress" aria-hidden="true"><div id="progress-bar" class="progress-bar"></div></div>
+        <p id="progress-text" class="progress-text" aria-live="polite"></p>
+
+        <div id="run-error" class="alert error" role="alert" hidden></div>
+
+        <details id="skipped" class="skipped" hidden>
+          <summary></summary>
+          <ul></ul>
+        </details>
+
+        <ul id="site-grid" class="grid"></ul>
+      </section>
+
+      <section id="missing-view" class="view" hidden>
+        <h1>Run not found</h1>
+        <p class="muted">It may have been deleted from the screenshots folder.</p>
+        <a class="button" href="#/new">Start a new capture</a>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
