@@ -6,6 +6,7 @@ const { createFilenameAllocator } = require('./filenames');
 // Capture a full-page screenshot of each site, one at a time. Progress is
 // reported through onEvent; a site that fails is recorded and the run moves on.
 // Aborting `signal` closes the browser, which stops the site in progress.
+// Filenames in `reservedFilenames` are never written over.
 async function captureSites(sites, options) {
   const {
     outputDir,
@@ -13,6 +14,7 @@ async function captureSites(sites, options) {
     timeout,
     headless,
     signal,
+    reservedFilenames = [],
     onEvent = () => {},
     launch = (launchOptions) => puppeteer.launch(launchOptions),
   } = options;
@@ -27,7 +29,7 @@ async function captureSites(sites, options) {
   };
 
   fs.mkdirSync(outputDir, { recursive: true });
-  const allocateFilename = createFilenameAllocator();
+  const allocateFilename = createFilenameAllocator(reservedFilenames);
   const results = [];
   emit({ type: 'start', total: sites.length });
 

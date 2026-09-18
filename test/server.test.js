@@ -28,9 +28,9 @@ function fakeCapture(gate) {
   };
 }
 
-async function startServer(t, { gate, config = {} } = {}) {
+async function startServer(t, { gate, config = {}, capture = fakeCapture(gate) } = {}) {
   const dir = makeTempDir(t);
-  const runs = new RunManager({ outputDir: dir, capture: fakeCapture(gate) });
+  const runs = new RunManager({ outputDir: dir, capture });
   const server = http.createServer(createApp({ config: { ...DEFAULTS, ...config }, runs }));
   const port = await listen(server);
   t.after(() => {
@@ -208,6 +208,68 @@ test('cancels a running capture', async (t) => {
 
   const again = await request(port, { method: 'POST', path: `/api/runs/${id}/cancel`, body: {} });
   assert.equal(again.status, 409);
+});
+
+test('retries failed sites of a finished run', async (t) => {
+  // The first attempt at react.dev fails; later attempts succeed
+  let attempts = 0;
+  const capture = async (sites, { outputDir, onEvent }) => {
+    sites.forEach((site, index) => {
+      onEvent({ type: 'site-start', index });
+      if (site.url === 'https://react.dev/' && attempts++ === 0) {
+        onEvent({ type: 'site-failed', index, status: 'failed', error: 'net::ERR_TIMED_OUT', durationMs: 1 });
+        return;
+      }
+      const file = `${site.name}.png`;
+      fs.writeFileSync(path.join(outputDir, file), 'fake png');
+      onEvent({ type: 'site-done', index, file, durationMs: 1 });
+    });
+    return { cancelled: false };
+  };
+  const { port } = await startServer(t, { capture });
+
+  const { id } = (await startRun(port)).json.run;
+  const first = await waitForStatus(port, id, 'completed');
+  assert.deepEqual(first.sites.map((s) => s.status), ['saved', 'failed']);
+
+  const retry = await request(port, { method: 'POST', path: `/api/runs/${id}/retry`, body: { sites: [1] } });
+  assert.equal(retry.status, 202, retry.text);
+  assert.deepEqual(retry.json.run.sites.map((s) => s.status), ['saved', 'pending']);
+
+  const done = await waitForStatus(port, id, 'completed');
+  assert.deepEqual(done.sites.map((s) => [s.status, s.file]), [['saved', 'github.com.png'], ['saved', 'React.png']]);
+
+  const nothingLeft = await request(port, { method: 'POST', path: `/api/runs/${id}/retry`, body: {} });
+  assert.equal(nothingLeft.status, 400);
+  assert.equal(nothingLeft.json.error, 'There are no failed sites to retry');
+});
+
+test('validates retry requests', async (t) => {
+  const gate = deferred();
+  const { port, runs } = await startServer(t, { gate });
+  const { id } = (await startRun(port)).json.run;
+
+  const busy = await request(port, { method: 'POST', path: `/api/runs/${id}/retry`, body: {} });
+  assert.equal(busy.status, 409);
+  assert.equal(busy.json.activeRunId, id);
+
+  const ended = new Promise((resolve) => runs.once('end', resolve));
+  gate.resolve();
+  await ended;
+
+  for (const sites of ['1', [1.5], [null], {}]) {
+    const res = await request(port, { method: 'POST', path: `/api/runs/${id}/retry`, body: { sites } });
+    assert.equal(res.status, 400, JSON.stringify(sites));
+  }
+  const saved = await request(port, { method: 'POST', path: `/api/runs/${id}/retry`, body: { sites: [0] } });
+  assert.equal(saved.status, 400);
+  assert.match(saved.json.error, /doesn't need a retry/);
+
+  assert.equal((await request(port, { method: 'POST', path: '/api/runs/20000101-000000-abcd/retry', body: {} })).status, 404);
+  const plain = await request(port, {
+    method: 'POST', path: `/api/runs/${id}/retry`, body: 'x', headers: { 'Content-Type': 'text/plain' },
+  });
+  assert.equal(plain.status, 415);
 });
 
 test('streams progress as server-sent events', async (t) => {

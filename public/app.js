@@ -140,6 +140,7 @@ function showNewRun() {
 async function showRun(id) {
   closeStream();
   state.currentRunId = id;
+  $('#retry-error').hidden = true;
   renderRunList();
 
   let run;
@@ -234,6 +235,12 @@ function renderRun(run) {
   cancel.textContent = run.cancelRequested ? 'Cancelling…' : 'Cancel';
   cancel.dataset.runId = run.id;
 
+  const retryCount = running ? 0 : run.sites.filter(isRetryable).length;
+  const retryAll = $('#retry-all-button');
+  retryAll.hidden = retryCount === 0;
+  retryAll.disabled = false;
+  retryAll.textContent = `Retry ${plural(retryCount, 'site')}`;
+
   $('#progress-bar').style.width = `${run.sites.length ? (done / run.sites.length) * 100 : 0}%`;
   $('#progress-text').textContent = running
     ? `${done} of ${run.sites.length} done · ${saved} saved${failed ? ` · ${failed} failed` : ''}`
@@ -267,17 +274,18 @@ function renderSites(run) {
     grid.dataset.runId = run.id;
   }
   run.sites.forEach((site, index) => {
-    const key = [site.status, site.file, site.error].join('|');
+    const canRetry = run.status !== 'running' && isRetryable(site);
+    const key = [site.status, site.file, site.error, canRetry].join('|');
     const existing = grid.children[index];
     if (existing && existing.dataset.key === key) return;
-    const card = siteCard(run.id, site, index);
+    const card = siteCard(run.id, site, index, canRetry);
     card.dataset.key = key;
     if (existing) existing.replaceWith(card);
     else grid.append(card);
   });
 }
 
-function siteCard(runId, site, index) {
+function siteCard(runId, site, index, canRetry) {
   let thumb;
   if (site.status === 'saved') {
     const src = screenshotUrl(runId, site.file);
@@ -297,7 +305,14 @@ function siteCard(runId, site, index) {
       cancelled: 'Cancelled',
     }[site.status];
     thumb = h('div', { class: 'thumb placeholder' },
-      h('span', {}, site.status === 'capturing' && h('span', { class: 'spinner', 'aria-hidden': 'true' }), label));
+      h('span', {}, site.status === 'capturing' && h('span', { class: 'spinner', 'aria-hidden': 'true' }), label),
+      canRetry && h('button', {
+        type: 'button',
+        class: 'button small',
+        'data-retry': true,
+        'aria-label': `Retry ${site.name}`,
+        onclick: () => retrySites([index]),
+      }, 'Retry'));
   }
 
   const safeHref = /^https?:\/\//i.test(site.url) ? site.url : null;
@@ -309,6 +324,46 @@ function siteCard(runId, site, index) {
         h('span', { class: `pill ${site.status}` }, SITE_STATUS_LABELS[site.status] || site.status)),
       h('a', { class: 'card-url', href: safeHref, target: '_blank', rel: 'noopener noreferrer', title: site.url }, displayUrl(site.url)),
       site.error && h('p', { class: 'card-error' }, site.error)));
+}
+
+// Retrying failed sites. The server captures them again into the same run and
+// the progress stream fills their cards back in.
+
+function isRetryable(site) {
+  return site.status === 'failed' || site.status === 'cancelled';
+}
+
+// Retry the sites at `indexes`, or every failed and cancelled site if omitted
+async function retrySites(indexes) {
+  const run = state.run;
+  if (!run) return;
+  const buttons = document.querySelectorAll('[data-retry]');
+  for (const button of buttons) button.disabled = true; // no double submits
+  $('#retry-error').hidden = true;
+
+  try {
+    const { run: updated } = await api(`/runs/${encodeURIComponent(run.id)}/retry`, {
+      method: 'POST',
+      body: indexes ? { sites: indexes } : {},
+    });
+    if (state.currentRunId !== updated.id) return; // navigated away meanwhile
+    renderRun(updated);
+    updateRunSummary(updated);
+    closeStream();
+    openStream(updated.id);
+  } catch (error) {
+    for (const button of buttons) button.disabled = false;
+    showRetryError(error);
+  }
+}
+
+function showRetryError(error) {
+  const box = $('#retry-error');
+  box.replaceChildren(h('p', {}, `Couldn’t retry: ${error.message}`));
+  if (error.status === 409 && error.data?.activeRunId) {
+    box.append(h('p', {}, h('a', { href: `#/runs/${error.data.activeRunId}` }, 'View the capture in progress')));
+  }
+  box.hidden = false;
 }
 
 // Screenshot viewer: a modal carousel over the current run's saved screenshots.
@@ -569,6 +624,7 @@ function bindForm({ defaults, limits }) {
 
   $('#new-run-form').addEventListener('submit', startCapture);
   $('#cancel-button').addEventListener('click', cancelRun);
+  $('#retry-all-button').addEventListener('click', () => retrySites());
 }
 
 async function init() {

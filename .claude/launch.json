@@ -5,7 +5,8 @@
       "name": "screenshooter",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["start"],
-      "port": 5055
+      "port": 5055,
+      "autoPort": true
     }
   ]
 }

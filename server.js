@@ -3,7 +3,7 @@ const path = require('path');
 const express = require('express');
 const { loadConfig, runDefaults, validateRunOptions, LIMITS, MAX_SITES_PER_RUN } = require('./src/config');
 const { parseUrlList, parseCsv, InputError } = require('./src/sites');
-const { RunManager, RunInProgressError } = require('./src/runs');
+const { RunManager, RunInProgressError, InvalidRetryError } = require('./src/runs');
 
 const LOCAL_HOST_HEADER = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
@@ -117,6 +117,26 @@ function createApp({ config, runs }) {
     const run = runs.get(req.params.id);
     if (!run) return res.status(404).json({ error: 'Run not found' });
     res.json({ run });
+  });
+
+  // Capture failed or cancelled sites of a finished run again. `sites` lists
+  // their positions in the run; leave it out to retry all of them.
+  api.post('/runs/:id/retry', (req, res) => {
+    const { sites } = req.body ?? {};
+    if (sites !== undefined && !(Array.isArray(sites) && sites.every(Number.isInteger))) {
+      return res.status(400).json({ error: 'sites must be a list of site numbers' });
+    }
+    try {
+      const run = runs.retry(req.params.id, sites);
+      if (!run) return res.status(404).json({ error: 'Run not found' });
+      res.status(202).json({ run });
+    } catch (error) {
+      if (error instanceof RunInProgressError) {
+        return res.status(409).json({ error: error.message, activeRunId: error.runId });
+      }
+      if (error instanceof InvalidRetryError) return res.status(400).json({ error: error.message });
+      throw error;
+    }
   });
 
   api.post('/runs/:id/cancel', (req, res) => {
