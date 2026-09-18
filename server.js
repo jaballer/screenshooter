@@ -56,6 +56,15 @@ function createApp({ config, runs }) {
   });
   // Room for a 5 MB CSV (the UI's limit) once it's escaped into JSON
   api.use(express.json({ limit: '10mb' }));
+  // Every POST takes a JSON object. An array or an empty body would otherwise
+  // read as "no fields given", which for a retry means "retry everything".
+  api.use((req, res, next) => {
+    if (req.method !== 'POST') return next();
+    if (req.body === null || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      return res.status(400).json({ error: 'Expected a JSON object' });
+    }
+    next();
+  });
 
   api.get('/config', (req, res) => {
     res.json({ defaults, limits: LIMITS });
@@ -66,7 +75,7 @@ function createApp({ config, runs }) {
   });
 
   api.post('/runs', async (req, res) => {
-    const { source, text, filename, options } = req.body ?? {};
+    const { source, text, filename, options } = req.body;
     if (source !== 'urls' && source !== 'csv') {
       return res.status(400).json({ error: 'source must be "urls" or "csv"' });
     }
@@ -122,7 +131,7 @@ function createApp({ config, runs }) {
   // Capture failed or cancelled sites of a finished run again. `sites` lists
   // their positions in the run; leave it out to retry all of them.
   api.post('/runs/:id/retry', (req, res) => {
-    const { sites } = req.body ?? {};
+    const { sites } = req.body;
     if (sites !== undefined && !(Array.isArray(sites) && sites.every(Number.isInteger))) {
       return res.status(400).json({ error: 'sites must be a list of site numbers' });
     }

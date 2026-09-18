@@ -129,6 +129,10 @@ test('validates the request before starting a run', async (t) => {
   const badSource = await startRun(port, { source: 'ftp', text: 'x' });
   assert.equal(badSource.status, 400);
 
+  const arrayBody = await startRun(port, '[]');
+  assert.equal(arrayBody.status, 400);
+  assert.equal(arrayBody.json.error, 'Expected a JSON object');
+
   const badText = await startRun(port, { source: 'urls', text: 42 });
   assert.equal(badText.status, 400);
 
@@ -256,6 +260,14 @@ test('validates retry requests', async (t) => {
   const ended = new Promise((resolve) => runs.once('end', resolve));
   gate.resolve();
   await ended;
+
+  // A body that isn't a JSON object must not be read as "retry everything"
+  for (const body of ['[]', 'null', '42', '"sites"']) {
+    const res = await request(port, { method: 'POST', path: `/api/runs/${id}/retry`, body });
+    assert.equal(res.status, 400, body);
+  }
+  const noBody = await request(port, { method: 'POST', path: `/api/runs/${id}/retry`, headers: { 'Content-Type': 'application/json' } });
+  assert.equal(noBody.status, 400);
 
   for (const sites of ['1', [1.5], [null], {}]) {
     const res = await request(port, { method: 'POST', path: `/api/runs/${id}/retry`, body: { sites } });
