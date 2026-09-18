@@ -85,7 +85,13 @@ function summarize(run) {
     total: run.sites.length,
     saved: count('saved'),
     failed: count('failed'),
+    cancelled: count('cancelled'),
   };
+}
+
+// " · 2 failed · 1 cancelled", or '' when nothing went wrong
+function problemCounts(failed, cancelled) {
+  return `${failed ? ` · ${failed} failed` : ''}${cancelled ? ` · ${cancelled} cancelled` : ''}`;
 }
 
 const RUN_STATUS_LABELS = {
@@ -157,6 +163,16 @@ async function showRun(id) {
   if (run.status === 'running') openStream(id);
 }
 
+// Re-fetch the run being shown, and follow it live if it's running again
+async function refreshCurrentRun() {
+  const id = state.currentRunId;
+  if (!id || $('#run-view').hidden) return;
+  const { run } = await api(`/runs/${encodeURIComponent(id)}`);
+  if (state.currentRunId !== id) return; // navigated away meanwhile
+  renderRun(run);
+  if (run.status === 'running' && !state.stream) openStream(id);
+}
+
 function openStream(id) {
   const stream = new EventSource(`/api/runs/${encodeURIComponent(id)}/events`);
   state.stream = stream;
@@ -197,8 +213,8 @@ function renderRunList() {
   list.replaceChildren(...state.runs.map((run) => {
     const dotClass = run.status === 'completed' && run.failed > 0 ? 'has-failures' : run.status;
     const counts = run.status === 'running'
-      ? `${run.saved + run.failed} of ${run.total}`
-      : `${plural(run.saved, 'shot')}${run.failed ? ` · ${run.failed} failed` : ''}`;
+      ? `${run.saved + run.failed + run.cancelled} of ${run.total}`
+      : `${plural(run.saved, 'shot')}${problemCounts(run.failed, run.cancelled)}`;
     return h('li', {},
       h('a', { class: 'run-link', href: `#/runs/${run.id}`, 'aria-current': run.id === state.currentRunId ? 'page' : null },
         h('span', { class: `dot ${dotClass}`, title: RUN_STATUS_LABELS[run.status] || run.status }),
@@ -215,6 +231,7 @@ function renderRun(run) {
   const done = run.sites.filter((site) => !['pending', 'capturing'].includes(site.status)).length;
   const saved = run.sites.filter((site) => site.status === 'saved').length;
   const failed = run.sites.filter((site) => site.status === 'failed').length;
+  const cancelled = run.sites.filter((site) => site.status === 'cancelled').length;
   const running = run.status === 'running';
 
   $('#run-title').textContent = sourceLabel(run.source);
@@ -243,8 +260,8 @@ function renderRun(run) {
 
   $('#progress-bar').style.width = `${run.sites.length ? (done / run.sites.length) * 100 : 0}%`;
   $('#progress-text').textContent = running
-    ? `${done} of ${run.sites.length} done · ${saved} saved${failed ? ` · ${failed} failed` : ''}`
-    : `${saved} saved${failed ? ` · ${failed} failed` : ''}${run.finishedAt ? ` · finished ${formatDate(run.finishedAt)}` : ''}`;
+    ? `${done} of ${run.sites.length} done · ${saved} saved${problemCounts(failed, cancelled)}`
+    : `${saved} saved${problemCounts(failed, cancelled)}${run.finishedAt ? ` · finished ${formatDate(run.finishedAt)}` : ''}`;
 
   const runError = $('#run-error');
   runError.hidden = !run.error;
@@ -354,6 +371,9 @@ async function retrySites(indexes) {
   } catch (error) {
     for (const button of buttons) button.disabled = false;
     showRetryError(error);
+    // Most likely the run changed elsewhere (retried from another tab), so
+    // show what it looks like now
+    refreshCurrentRun().catch(() => {});
   }
 }
 
@@ -644,7 +664,11 @@ init().catch((error) => {
 });
 
 // Keep the history fresh when coming back to the tab
+// Keep the history and the open run fresh when coming back to the tab, e.g.
+// after retrying this run from another tab. Best effort: if the server is
+// down, things just stay as they were.
 document.addEventListener('visibilitychange', () => {
-  // Best effort: if the server is down, the list just stays as it was
-  if (document.visibilityState === 'visible') refreshRunList().catch(() => {});
+  if (document.visibilityState !== 'visible') return;
+  refreshRunList().catch(() => {});
+  refreshCurrentRun().catch(() => {});
 });

@@ -32,6 +32,7 @@ function summarize(run) {
     total: run.sites.length,
     saved: count('saved'),
     failed: count('failed'),
+    cancelled: count('cancelled'),
   };
 }
 
@@ -199,6 +200,11 @@ class RunManager extends EventEmitter {
 
   finish(run) {
     settleUnfinishedSites(run, run.error || 'Not captured');
+    // A run is only complete once no site is left cancelled; retrying some of
+    // a cancelled run's sites leaves the rest still to do
+    if (run.status === 'completed' && run.sites.some((site) => site.status === 'cancelled')) {
+      run.status = 'cancelled';
+    }
     run.finishedAt = new Date().toISOString();
     this.active = null;
     this.save(run);

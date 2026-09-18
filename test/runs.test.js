@@ -184,6 +184,36 @@ test('retry captures failed sites again into the same run', async (t) => {
   assert.equal(runs.list().length, 1);
 });
 
+test('a run stays cancelled until every cancelled site has been retried', async (t) => {
+  const dir = makeTempDir(t);
+  const gate = deferred();
+  const runs = new RunManager({ outputDir: dir, capture: fakeCapture({ gate }) });
+  const sites = [...SITES, { name: 'Three', url: 'https://three.example/' }];
+
+  // Cancel while the first site is in progress: all three end up cancelled
+  let ended = nextEnd(runs);
+  const run = runs.start({ sites, options: OPTIONS, source: { type: 'urls' } });
+  runs.cancel(run.id);
+  gate.resolve();
+  await ended;
+  assert.deepEqual(runs.get(run.id).sites.map((s) => s.status), ['cancelled', 'cancelled', 'cancelled']);
+
+  runs.capture = namingCapture(new Set());
+  ended = nextEnd(runs);
+  runs.retry(run.id, [0]);
+  await ended;
+  let saved = runs.get(run.id);
+  assert.equal(saved.status, 'cancelled');
+  assert.deepEqual(runs.list().map((r) => [r.status, r.saved, r.failed, r.cancelled]), [['cancelled', 1, 0, 2]]);
+
+  ended = nextEnd(runs);
+  runs.retry(run.id);
+  await ended;
+  saved = runs.get(run.id);
+  assert.equal(saved.status, 'completed');
+  assert.deepEqual(runs.list().map((r) => [r.status, r.saved, r.cancelled]), [['completed', 3, 0]]);
+});
+
 test('a retry never overwrites another screenshot with the same name', async (t) => {
   const dir = makeTempDir(t);
   const failing = new Set(['https://b.example/']);
