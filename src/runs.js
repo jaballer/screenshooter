@@ -1,0 +1,205 @@
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const { EventEmitter } = require('events');
+const { captureSites } = require('./capture');
+
+// Run IDs double as folder names, so anything outside this exact shape is
+// rejected before it gets near the filesystem.
+const RUN_ID_PATTERN = /^\d{8}-\d{6}-[0-9a-f]{4}$/;
+const MANIFEST_FILE = 'run.json';
+
+function isValidRunId(id) {
+  return typeof id === 'string' && RUN_ID_PATTERN.test(id);
+}
+
+// e.g. 20260917-183012-a1b2 (local time, so folders sort and read naturally)
+function createRunId(date = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0');
+  const day = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`;
+  const time = `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+  return `${day}-${time}-${crypto.randomBytes(2).toString('hex')}`;
+}
+
+function summarize(run) {
+  const count = (status) => run.sites.filter((site) => site.status === status).length;
+  return {
+    id: run.id,
+    status: run.status,
+    source: run.source,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+    total: run.sites.length,
+    saved: count('saved'),
+    failed: count('failed'),
+  };
+}
+
+class RunInProgressError extends Error {
+  constructor(runId) {
+    super('A capture is already running');
+    this.runId = runId;
+  }
+}
+
+// Runs web-UI captures one at a time. Each run gets its own folder under
+// outputDir holding the screenshots and a run.json record that is rewritten as
+// progress arrives, so history survives server restarts. Emits 'update' (run)
+// on every change and 'end' (run) once a run finishes.
+class RunManager extends EventEmitter {
+  constructor({ outputDir, capture = captureSites }) {
+    super();
+    this.setMaxListeners(100); // one pair per open browser tab
+    this.outputDir = path.resolve(outputDir);
+    this.capture = capture;
+    this.active = null;
+  }
+
+  start({ sites, skipped = [], options, source }) {
+    if (this.active) throw new RunInProgressError(this.active.run.id);
+
+    const { id, runDir } = this.createRunDir();
+
+    const run = {
+      id,
+      status: 'running',
+      source,
+      options,
+      startedAt: new Date().toISOString(),
+      finishedAt: null,
+      cancelRequested: false,
+      error: null,
+      skipped,
+      sites: sites.map((site) => ({
+        name: site.name,
+        url: site.url,
+        status: 'pending',
+        file: null,
+        error: null,
+        durationMs: null,
+      })),
+    };
+    const controller = new AbortController();
+    this.active = { run, controller };
+    this.save(run);
+
+    const onEvent = (event) => this.applyEvent(run, event);
+    Promise.resolve()
+      .then(() => this.capture(sites, { ...options, outputDir: runDir, signal: controller.signal, onEvent }))
+      .then((summary) => {
+        run.status = summary.cancelled ? 'cancelled' : 'completed';
+      })
+      .catch((error) => {
+        run.status = controller.signal.aborted ? 'cancelled' : 'error';
+        run.error = error.message;
+      })
+      .finally(() => this.finish(run))
+      .catch((error) => console.error(`Run ${id} listener failed:`, error));
+
+    return run;
+  }
+
+  // Create the run's folder exclusively, so two runs can never share one even
+  // if they start in the same second with the same random suffix
+  createRunDir() {
+    fs.mkdirSync(this.outputDir, { recursive: true });
+    for (let attempt = 0; ; attempt += 1) {
+      const id = createRunId();
+      const runDir = path.join(this.outputDir, id);
+      try {
+        fs.mkdirSync(runDir);
+        return { id, runDir };
+      } catch (error) {
+        if (error.code !== 'EEXIST' || attempt >= 5) throw error;
+      }
+    }
+  }
+
+  applyEvent(run, event) {
+    const site = run.sites[event.index];
+    if (!site) return;
+    switch (event.type) {
+      case 'site-start':
+        site.status = 'capturing';
+        break;
+      case 'site-done':
+        Object.assign(site, { status: 'saved', file: event.file, durationMs: event.durationMs });
+        break;
+      case 'site-failed':
+      case 'site-cancelled':
+        Object.assign(site, { status: event.status, error: event.error, durationMs: event.durationMs });
+        break;
+      default:
+        return;
+    }
+    this.save(run);
+    this.emit('update', run);
+  }
+
+  finish(run) {
+    // Sites the run never reached
+    for (const site of run.sites) {
+      if (site.status === 'pending' || site.status === 'capturing') {
+        site.status = run.status === 'cancelled' ? 'cancelled' : 'failed';
+        if (site.status === 'failed') site.error = run.error || 'Not captured';
+      }
+    }
+    run.finishedAt = new Date().toISOString();
+    this.active = null;
+    this.save(run);
+    this.emit('update', run);
+    this.emit('end', run);
+  }
+
+  cancel(id) {
+    if (!this.active || this.active.run.id !== id) return false;
+    const { run, controller } = this.active;
+    run.cancelRequested = true;
+    controller.abort();
+    this.save(run);
+    this.emit('update', run);
+    return true;
+  }
+
+  get(id) {
+    if (!isValidRunId(id)) return null;
+    if (this.active && this.active.run.id === id) return this.active.run;
+
+    let run;
+    try {
+      run = JSON.parse(fs.readFileSync(path.join(this.outputDir, id, MANIFEST_FILE), 'utf8'));
+    } catch {
+      return null;
+    }
+    // A hand-edited or truncated record shouldn't break the history list
+    if (!run || !Array.isArray(run.sites)) return null;
+    // Marked running on disk but not running here: the server stopped mid-run
+    if (run.status === 'running') run.status = 'interrupted';
+    return run;
+  }
+
+  list() {
+    let entries;
+    try {
+      entries = fs.readdirSync(this.outputDir, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+    return entries
+      .filter((entry) => entry.isDirectory() && isValidRunId(entry.name))
+      .map((entry) => this.get(entry.name))
+      .filter(Boolean)
+      .map(summarize)
+      .sort((a, b) => b.id.localeCompare(a.id));
+  }
+
+  save(run) {
+    try {
+      fs.writeFileSync(path.join(this.outputDir, run.id, MANIFEST_FILE), JSON.stringify(run, null, 2));
+    } catch (error) {
+      console.error(`Could not save run ${run.id}:`, error.message);
+    }
+  }
+}
+
+module.exports = { RunManager, RunInProgressError, isValidRunId, createRunId };

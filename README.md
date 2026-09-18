@@ -1,17 +1,18 @@
 # ScreenShooter
 
-ScreenShooter is a simple, automated website screenshot tool built using Node.js and Puppeteer. It reads website URLs from a CSV file and captures full-page screenshots, saving them locally.
+ScreenShooter is a simple, automated website screenshot tool built using Node.js and Puppeteer. Paste a list of URLs or upload a CSV in its local web app, or run it from the command line, and it captures full-page screenshots and saves them locally.
 
 ## Features
-- Reads website URLs from a CSV file
+- Local web app: paste URLs or upload a CSV, watch progress live, browse results in a gallery
+- History of past runs, each saved in its own folder
+- Command-line mode that reads website URLs from a CSV file
 - Captures full-page screenshots with a customizable width
-- Saves screenshots in a designated folder
+- Accepts bare domains (`github.com`) and local dev servers (`localhost:3000`)
 - Supports environment variable configuration
-- Automatically creates necessary directories
 - Error handling with detailed logging
 
 ## Requirements
-- Node.js 14.0 or higher
+- Node.js 18 or higher
 - 4GB RAM minimum (8GB recommended for large websites)
 - Storage space for screenshots (varies based on usage)
 
@@ -27,24 +28,41 @@ npm install
 
 ## Usage
 
-### 1. Configure Your Environment Variables
-Create a `.env` file in the project root directory to customize settings:
+### Web app
+Start the server:
+```sh
+npm start
+```
+Then open [http://localhost:5055](http://localhost:5055). From there you can:
+- Paste URLs, one per line. Put a name first (`Name, URL`) to choose the screenshot's filename.
+- Or upload a CSV with a `url` column and an optional `name` column.
+- Set the width, timeout, and headless mode for the run, then start it.
+- Watch each site's progress live, cancel a run, and browse past runs in the History sidebar.
+
+Each web run saves its screenshots in its own folder, `screenshots/<run-id>/`, next to a `run.json` file recording what happened. The server only accepts connections from your own computer.
+
+### Command line
+
+#### 1. Configure Your Environment Variables
+Create a `.env` file in the project root directory to customize settings (the web app uses these as its defaults):
 ```env
 SCREENSHOT_WIDTH=1440    # Width of the viewport in pixels
 HEADLESS_MODE=true      # Run browser in headless mode
 TIMEOUT=60000           # Maximum time (ms) to wait for page load
 CSV_FILE=websites.csv   # Input CSV filename
 OUTPUT_DIR=screenshots  # Output directory for screenshots
+PORT=5055               # Port for the web app
 ```
 
-#### Environment Variables Explained
+##### Environment Variables Explained
 - `SCREENSHOT_WIDTH`: Sets the viewport width for screenshots (default: 1440px)
-- `HEADLESS_MODE`: When true, runs browser without GUI (default: true)
+- `HEADLESS_MODE`: Runs the browser without a window unless set to `false` (default: true)
 - `TIMEOUT`: Maximum time to wait for a page to load in milliseconds (default: 60000)
 - `CSV_FILE`: Name of the input CSV file (default: websites.csv)
 - `OUTPUT_DIR`: Directory where screenshots will be saved (default: screenshots)
+- `PORT`: Port the web app listens on (default: 5055)
 
-### 2. Prepare the CSV File
+#### 2. Prepare the CSV File
 Copy the example file and edit it:
 ```sh
 # On Unix/Linux/MacOS
@@ -62,25 +80,36 @@ GitHub,https://github.com/
 Postman,https://www.postman.com/
 ```
 
-### 3. Run the Screenshot Script
+The `name` column is optional. Rows without a name are named after their URL (for example `github.com-features-actions.png`).
+
+#### 3. Run the Screenshot Script
 Execute the following command:
 ```sh
 # On Unix/Linux/MacOS/Windows
-node screenshot.js
+npm run capture
 
-# On Windows (PowerShell)
-node .\screenshot.js
+# Or run the script directly
+node screenshot.js
 ```
 
-### 4. View Screenshots
-Captured screenshots will be saved in the `screenshots/` folder (or the folder specified in `.env`).
+The command exits with code `1` if any site fails, so it can be used in scripts.
+
+#### 4. View Screenshots
+Captured screenshots will be saved in the `screenshots/` folder (or the folder specified in `.env`). Command-line runs write directly into this folder and overwrite screenshots with the same name from earlier runs.
 
 ## Technical Details
 - Screenshots are captured after the page reaches the `networkidle2` state (when there are no more than 2 network connections for at least 500ms)
-- Failed screenshots are logged to console but won't stop the process
+- Failed screenshots are logged but won't stop the run
 - The tool automatically adjusts screenshot height based on page content
-- Screenshots are saved as PNG files, using the 'name' field from the CSV as the filename
+- Screenshots are saved as PNG files, using the site's name as the filename
 - Filenames are automatically sanitized (unsafe characters replaced) and duplicate names get a numeric suffix, so no special-character handling is required in the CSV
+- Only `http` and `https` URLs are captured. Domains without a scheme get `https://`, and local addresses (`localhost`, private IPs, `.test`) get `http://`. Rows that can't be used are skipped and listed with the reason
+- CSV headers are matched case-insensitively, and files saved with a byte-order mark (for example from Excel) work
+
+## Development
+- `npm test` runs the test suite with Node's built-in test runner. The browser tests launch a real headless Chrome against a local page, so no internet connection is needed
+- `src/` holds the shared code: `sites.js` (parsing and URL checks), `capture.js` (the Puppeteer capture loop), `runs.js` (web run folders and history), `filenames.js`, and `config.js`
+- `server.js` is the web app's server, and `public/` holds its page. `screenshot.js` is the command-line entry point
 
 ## Known Limitations
 - Very long pages might require increased memory allocation
@@ -136,7 +165,6 @@ TIMEOUT=120000
 - Generate reports of captured screenshots
 - Add support for authentication
 - Add retry mechanism for failed screenshots
-- Implement filename sanitization
 
 ## License
 This project is licensed under the MIT License.

@@ -1,18 +1,28 @@
 {
   "name": "screenshooter",
   "version": "1.0.0",
-  "description": "A Node.js tool for capturing website screenshots using Puppeteer.",
+  "description": "A local web app and CLI for capturing full-page website screenshots with Puppeteer.",
   "main": "screenshot.js",
   "scripts": {
-    "start": "node screenshot.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "capture": "node screenshot.js",
+    "test": "node --test"
   },
-  "keywords": ["puppeteer", "screenshots", "automation", "web-capture"],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "puppeteer",
+    "screenshots",
+    "automation",
+    "web-capture"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "csv-parser": "^3.2.0",
     "dotenv": "^16.4.7",
+    "express": "^5.2.1",
     "puppeteer": "^24.1.1"
   }
 }
