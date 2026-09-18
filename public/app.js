@@ -5,6 +5,7 @@ const MAX_CSV_BYTES = 5 * 1024 * 1024;
 const state = {
   runs: [],
   currentRunId: null,
+  run: null, // the run being shown, kept current by the progress stream
   stream: null,
   source: 'urls',
   csv: null,
@@ -120,6 +121,7 @@ function closeStream() {
 }
 
 function route() {
+  closeViewer();
   const match = location.hash.match(/^#\/runs\/([\w-]+)$/);
   if (match) {
     showRun(match[1]);
@@ -208,6 +210,7 @@ function renderRunList() {
 // Run view
 
 function renderRun(run) {
+  state.run = run;
   const done = run.sites.filter((site) => !['pending', 'capturing'].includes(site.status)).length;
   const saved = run.sites.filter((site) => site.status === 'saved').length;
   const failed = run.sites.filter((site) => site.status === 'failed').length;
@@ -242,6 +245,7 @@ function renderRun(run) {
 
   renderSkipped($('#skipped'), run.skipped);
   renderSites(run);
+  if ($('#viewer').open) renderViewerCaption(); // new screenshots change the count
 }
 
 function renderSkipped(details, skipped = []) {
@@ -266,18 +270,24 @@ function renderSites(run) {
     const key = [site.status, site.file, site.error].join('|');
     const existing = grid.children[index];
     if (existing && existing.dataset.key === key) return;
-    const card = siteCard(run.id, site);
+    const card = siteCard(run.id, site, index);
     card.dataset.key = key;
     if (existing) existing.replaceWith(card);
     else grid.append(card);
   });
 }
 
-function siteCard(runId, site) {
+function siteCard(runId, site, index) {
   let thumb;
   if (site.status === 'saved') {
     const src = screenshotUrl(runId, site.file);
-    thumb = h('a', { class: 'thumb', href: src, target: '_blank', rel: 'noopener', title: 'Open full-size screenshot' },
+    // Still a real link, so Cmd/Ctrl-click and middle-click open a new tab
+    const onclick = (event) => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      openViewer(index);
+    };
+    thumb = h('a', { class: 'thumb', href: src, target: '_blank', rel: 'noopener', title: 'View screenshot', onclick },
       h('img', { src, alt: `Screenshot of ${site.name}`, loading: 'lazy' }));
   } else {
     const label = {
@@ -299,6 +309,134 @@ function siteCard(runId, site) {
         h('span', { class: `pill ${site.status}` }, SITE_STATUS_LABELS[site.status] || site.status)),
       h('a', { class: 'card-url', href: safeHref, target: '_blank', rel: 'noopener noreferrer', title: site.url }, displayUrl(site.url)),
       site.error && h('p', { class: 'card-error' }, site.error)));
+}
+
+// Screenshot viewer: a modal carousel over the current run's saved screenshots.
+// It tracks the site index rather than a position, so screenshots that arrive
+// mid-run slot in without moving what's on screen.
+
+const viewer = { siteIndex: null, returnFocus: null, touchStart: null };
+
+function savedShots() {
+  if (!state.run) return [];
+  return state.run.sites
+    .map((site, index) => ({ site, index }))
+    .filter(({ site }) => site.status === 'saved');
+}
+
+function openViewer(siteIndex) {
+  const dialog = $('#viewer');
+  viewer.siteIndex = siteIndex;
+  if (!dialog.open) {
+    viewer.returnFocus = document.activeElement;
+    document.documentElement.classList.add('viewer-open');
+    dialog.showModal();
+  }
+  showSlide();
+  $('#viewer-stage').focus(); // arrow and page keys scroll the screenshot
+}
+
+function closeViewer() {
+  const dialog = $('#viewer');
+  if (dialog.open) dialog.close(); // cleanup happens in the 'close' handler
+}
+
+function stepViewer(delta) {
+  const shots = savedShots();
+  if (shots.length < 2) return;
+  const position = shots.findIndex((shot) => shot.index === viewer.siteIndex);
+  const next = shots[(position + delta + shots.length) % shots.length];
+  viewer.siteIndex = next.index;
+  showSlide();
+}
+
+function showSlide() {
+  const shot = savedShots().find(({ index }) => index === viewer.siteIndex);
+  if (!shot) {
+    closeViewer();
+    return;
+  }
+  const src = screenshotUrl(state.run.id, shot.site.file);
+  const stage = $('#viewer-stage');
+  const image = $('#viewer-image');
+  stage.classList.add('loading');
+  image.onload = image.onerror = () => stage.classList.remove('loading');
+  image.src = src;
+  image.alt = `Full-page screenshot of ${shot.site.name}`;
+  stage.scrollTop = 0;
+  $('#viewer-open').href = src;
+  renderViewerCaption();
+  preloadNeighbors();
+}
+
+function renderViewerCaption() {
+  const shots = savedShots();
+  const position = shots.findIndex(({ index }) => index === viewer.siteIndex);
+  if (position === -1) return;
+  const { site } = shots[position];
+  $('#viewer-title').textContent = site.name;
+  $('#viewer-meta').textContent = `${position + 1} of ${shots.length} · ${displayUrl(site.url)}`;
+  $('#viewer-prev').hidden = shots.length < 2;
+  $('#viewer-next').hidden = shots.length < 2;
+}
+
+// Warm the cache so the next and previous screenshots appear right away
+function preloadNeighbors() {
+  const shots = savedShots();
+  const position = shots.findIndex(({ index }) => index === viewer.siteIndex);
+  if (shots.length < 2) return;
+  for (const delta of [1, -1]) {
+    const { site } = shots[(position + delta + shots.length) % shots.length];
+    new Image().src = screenshotUrl(state.run.id, site.file);
+  }
+}
+
+function bindViewer() {
+  const dialog = $('#viewer');
+  const stage = $('#viewer-stage');
+
+  $('#viewer-close').addEventListener('click', closeViewer);
+  $('#viewer-prev').addEventListener('click', () => stepViewer(-1));
+  $('#viewer-next').addEventListener('click', () => stepViewer(1));
+
+  // Left and right move between shots. Esc is handled here as well as by the
+  // dialog itself, since the native close relies on the key's legacy keyCode.
+  dialog.addEventListener('keydown', (event) => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.key === 'ArrowLeft') stepViewer(-1);
+    else if (event.key === 'ArrowRight') stepViewer(1);
+    else if (event.key === 'Escape') closeViewer();
+    else return;
+    event.preventDefault();
+  });
+
+  // Clicking the dark space around the screenshot closes the viewer
+  stage.addEventListener('click', (event) => {
+    if (event.target === stage) closeViewer();
+  });
+
+  // Horizontal swipes move between shots; vertical ones scroll as usual
+  stage.addEventListener('touchstart', (event) => {
+    // A second finger means a pinch-zoom, not a swipe
+    const touch = event.touches.length === 1 ? event.touches[0] : null;
+    viewer.touchStart = touch && { x: touch.clientX, y: touch.clientY };
+  }, { passive: true });
+  stage.addEventListener('touchend', (event) => {
+    if (!viewer.touchStart) return;
+    const touch = event.changedTouches[0];
+    const dx = touch.clientX - viewer.touchStart.x;
+    const dy = touch.clientY - viewer.touchStart.y;
+    viewer.touchStart = null;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) stepViewer(dx < 0 ? 1 : -1);
+  });
+
+  dialog.addEventListener('close', () => {
+    document.documentElement.classList.remove('viewer-open');
+    $('#viewer-image').removeAttribute('src'); // release the full-size image
+    viewer.siteIndex = null;
+    viewer.returnFocus?.focus();
+    viewer.returnFocus = null;
+  });
 }
 
 // New capture form
@@ -436,6 +574,7 @@ function bindForm({ defaults, limits }) {
 async function init() {
   const [config, { runs }] = await Promise.all([api('/config'), api('/runs')]);
   bindForm(config);
+  bindViewer();
   state.runs = runs;
   window.addEventListener('hashchange', route);
   route();

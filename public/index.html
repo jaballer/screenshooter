@@ -105,5 +105,29 @@
       </section>
     </main>
   </div>
+
+  <dialog id="viewer" class="viewer" aria-labelledby="viewer-title">
+    <div class="viewer-bar">
+      <div class="viewer-heading">
+        <p id="viewer-title" class="viewer-title"></p>
+        <p id="viewer-meta" class="viewer-meta"></p>
+      </div>
+      <div class="viewer-actions">
+        <a id="viewer-open" class="button viewer-button" target="_blank" rel="noopener">Open original</a>
+        <button type="button" id="viewer-close" class="viewer-icon-button" aria-label="Close viewer">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+    <div id="viewer-stage" class="viewer-stage" tabindex="0" aria-label="Screenshot, scroll to see the full page">
+      <img id="viewer-image" alt="">
+    </div>
+    <button type="button" id="viewer-prev" class="viewer-nav prev" aria-label="Previous screenshot">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button type="button" id="viewer-next" class="viewer-nav next" aria-label="Next screenshot">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </dialog>
 </body>
 </html>
