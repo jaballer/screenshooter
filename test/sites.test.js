@@ -27,7 +27,12 @@ test('normalizeUrl adds http to local addresses', () => {
 });
 
 test('normalizeUrl rejects other schemes', () => {
-  for (const input of ['file:///etc/passwd', 'javascript:alert(1)', 'data:text/html,hi', 'chrome://settings', 'ftp://example.com', 'mailto:a@b.com', 'about:blank']) {
+  for (const input of [
+    'file:///etc/passwd', 'javascript:alert(1)', 'data:text/html,hi', 'chrome://settings', 'ftp://example.com',
+    'mailto:a@b.com', 'about:blank',
+    // schemes followed by digits must not pass as host:port
+    'mailto:123@example.com', 'javascript:1', 'tel:5551234',
+  ]) {
     const result = normalizeUrl(input);
     assert.equal(result.ok, false, input);
     assert.match(result.reason, /Unsupported URL scheme/, input);

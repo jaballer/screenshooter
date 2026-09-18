@@ -8,8 +8,13 @@ class InputError extends Error {}
 // Hosts that usually serve plain http: loopback, private networks, dev TLDs
 const LOCAL_HOSTNAME = /^(localhost|127(\.\d{1,3}){3}|10(\.\d{1,3}){3}|192\.168(\.\d{1,3}){2}|172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2}|\[::1\])$|\.(localhost|test|local)$/i;
 
-// A leading "scheme:" — but not "host:port" such as localhost:3000
-const SCHEME_PREFIX = /^([a-z][a-z0-9+.-]*):(?!\d)/i;
+// A leading "scheme:", e.g. https: or mailto:
+const SCHEME_PREFIX = /^([a-z][a-z0-9+.-]*):/i;
+
+// A bare "host:port" such as localhost:3000 or example.com:8443/path, which
+// would otherwise read as a scheme. The host must be localhost or contain a
+// dot, so "javascript:1" and "mailto:123@example.com" still count as schemes.
+const HOST_AND_PORT = /^(localhost|[^\s:/?#@]*\.[^\s:/?#@]*):\d+(?:[/?#]|$)/i;
 
 // Turn user input into an absolute http(s) URL, or explain why it can't be one.
 // Bare hosts get a scheme added: http for local addresses, https otherwise.
@@ -18,7 +23,7 @@ function normalizeUrl(input) {
   if (!raw) return { ok: false, reason: 'Missing URL' };
 
   let candidate = raw;
-  const scheme = raw.match(SCHEME_PREFIX);
+  const scheme = !HOST_AND_PORT.test(raw) && raw.match(SCHEME_PREFIX);
   if (scheme) {
     const protocol = scheme[1].toLowerCase();
     if (protocol !== 'http' && protocol !== 'https') {

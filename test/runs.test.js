@@ -63,6 +63,8 @@ test('a run captures into its own folder and records the result', async (t) => {
   const saved = readManifest(dir, run.id);
   assert.equal(saved.status, 'completed');
   assert.ok(saved.finishedAt);
+  // Saved via a temporary file that is renamed into place
+  assert.deepEqual(fs.readdirSync(path.join(dir, run.id)).sort(), ['0.png', '1.png', 'run.json']);
   assert.deepEqual(saved.sites.map((s) => [s.status, s.file]), [['saved', '0.png'], ['saved', '1.png']]);
   assert.ok(fs.existsSync(path.join(dir, run.id, '0.png')));
   assert.deepEqual(updates.slice(0, 2), ['capturing,pending', 'saved,pending']);

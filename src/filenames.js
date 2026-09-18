@@ -21,7 +21,7 @@ function sanitizeFilename(name) {
     .replace(/[<>:"|?*\x00-\x1f]/g, '-') // other dangerous/reserved chars → dash
     .replace(/\.{2,}/g, '-')           // collapse .. to prevent path traversal
     .replace(/-{2,}/g, '-')            // collapse runs of dashes
-    .replace(/^[\s-]+|[\s-]+$/g, '');  // strip leading/trailing whitespace and dashes
+    .replace(/^[\s.-]+|[\s-]+$/g, ''); // strip leading/trailing whitespace and dashes, and leading dots (hidden files aren't served)
   return truncateToBytes(safe, MAX_BASENAME_BYTES)
     .replace(/[\s.-]+$/, '')           // no trailing dot/space/dash (a cut can expose one)
     || 'unnamed';                       // fallback if everything was stripped

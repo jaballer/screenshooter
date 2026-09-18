@@ -18,6 +18,12 @@ test('sanitizeFilename replaces reserved and control characters', () => {
   assert.equal(sanitizeFilename('tab\there'), 'tab-here');
 });
 
+test('sanitizeFilename never produces a hidden file', () => {
+  assert.equal(sanitizeFilename('.homepage'), 'homepage');
+  assert.equal(sanitizeFilename(' . env'), 'env');
+  assert.equal(sanitizeFilename('.'), 'unnamed');
+});
+
 test('sanitizeFilename falls back when nothing is left', () => {
   assert.equal(sanitizeFilename('///'), 'unnamed');
   assert.equal(sanitizeFilename('   '), 'unnamed');

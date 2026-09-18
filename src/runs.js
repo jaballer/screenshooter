@@ -204,9 +204,13 @@ class RunManager extends EventEmitter {
       .sort((a, b) => b.id.localeCompare(a.id));
   }
 
+  // Write to a temporary file and rename it into place, so a crash mid-write
+  // leaves the previous run.json intact instead of a truncated one
   save(run) {
+    const file = path.join(this.outputDir, run.id, MANIFEST_FILE);
     try {
-      fs.writeFileSync(path.join(this.outputDir, run.id, MANIFEST_FILE), JSON.stringify(run, null, 2));
+      fs.writeFileSync(`${file}.tmp`, JSON.stringify(run, null, 2));
+      fs.renameSync(`${file}.tmp`, file);
     } catch (error) {
       console.error(`Could not save run ${run.id}:`, error.message);
     }
