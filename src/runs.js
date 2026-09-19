@@ -229,13 +229,15 @@ class RunManager extends EventEmitter {
     if (this.active && this.active.run.id === id) {
       throw new RunInProgressError(id, 'This run is still capturing. Cancel it or let it finish first.');
     }
-    // A folder shaped like a run but without a readable run.json isn't in the
-    // history, so it isn't ours to remove
+    // Only runs in the history are ours to remove: a real folder with a readable
+    // run.json. A symlink isn't listed, and emptying it would delete files
+    // wherever it points.
+    const runDir = path.join(this.outputDir, id);
+    if (!fs.lstatSync(runDir, { throwIfNoEntry: false })?.isDirectory()) return false;
     if (!this.get(id)) return false;
     // Synchronous, so a retry can't start on this run while it's being removed.
     // run.json goes last: if some file can't be removed (a screenshot open in
     // another app on Windows, say), the run stays in the history to delete again.
-    const runDir = path.join(this.outputDir, id);
     for (const entry of fs.readdirSync(runDir)) {
       if (entry !== MANIFEST_FILE) fs.rmSync(path.join(runDir, entry), { recursive: true, force: true });
     }

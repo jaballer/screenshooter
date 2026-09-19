@@ -378,6 +378,17 @@ test('delete only removes folders of runs it knows about', (t) => {
   fs.writeFileSync(path.join(dir, '20260101-000000-dead', 'notes.txt'), 'not a run');
   assert.equal(runs.delete('20260101-000000-dead'), false);
   assert.ok(fs.existsSync(path.join(dir, '20260101-000000-dead', 'notes.txt')));
+
+  // A run-shaped symlink, even one pointing at a real run elsewhere, isn't in
+  // the history either, and nothing it points to is touched
+  const elsewhere = path.join(parent, 'elsewhere');
+  fs.mkdirSync(elsewhere);
+  fs.writeFileSync(path.join(elsewhere, 'run.json'), JSON.stringify({ id: '20260101-000000-beef', sites: [] }));
+  fs.writeFileSync(path.join(elsewhere, 'photo.png'), 'not ours');
+  fs.symlinkSync(elsewhere, path.join(dir, '20260101-000000-beef'), 'junction');
+  assert.deepEqual(runs.list(), []);
+  assert.equal(runs.delete('20260101-000000-beef'), false);
+  assert.deepEqual(fs.readdirSync(elsewhere).sort(), ['photo.png', 'run.json']);
 });
 
 test('delete removes a run left interrupted by a server restart', (t) => {
