@@ -284,6 +284,70 @@ test('validates retry requests', async (t) => {
   assert.equal(plain.status, 415);
 });
 
+test('deletes a finished run', async (t) => {
+  const { port, dir } = await startServer(t);
+  const { id } = (await startRun(port)).json.run;
+  await waitForStatus(port, id, 'completed');
+
+  // No body and no Content-Type needed
+  const res = await request(port, { method: 'DELETE', path: `/api/runs/${id}` });
+  assert.equal(res.status, 204, res.text);
+  assert.equal(res.text, '');
+  assert.equal(fs.existsSync(path.join(dir, id)), false);
+
+  assert.equal((await request(port, { path: `/api/runs/${id}` })).status, 404);
+  assert.equal((await request(port, { path: `/screenshots/${id}/0.png` })).status, 404);
+  assert.deepEqual((await request(port, { path: '/api/runs' })).json.runs, []);
+});
+
+test('deleting an unknown or malformed run is a 404', async (t) => {
+  const { port, dir } = await startServer(t);
+  const { id } = (await startRun(port)).json.run;
+  await waitForStatus(port, id, 'completed');
+  assert.equal((await request(port, { method: 'DELETE', path: `/api/runs/${id}` })).status, 204);
+
+  for (const urlPath of [`/api/runs/${id}`, '/api/runs/20000101-000000-abcd', '/api/runs/not-a-run', '/api/runs/..%2F..', '/api/runs/%2e%2e']) {
+    const res = await request(port, { method: 'DELETE', path: urlPath });
+    assert.equal(res.status, 404, urlPath);
+    assert.equal(res.json.error, 'Run not found', urlPath);
+  }
+  assert.ok(fs.existsSync(dir));
+});
+
+test('refuses to delete the run in progress', async (t) => {
+  const gate = deferred();
+  const { port, runs, dir } = await startServer(t, { gate });
+  const { id } = (await startRun(port)).json.run;
+
+  const busy = await request(port, { method: 'DELETE', path: `/api/runs/${id}` });
+  assert.equal(busy.status, 409);
+  assert.equal(busy.json.activeRunId, id);
+  assert.match(busy.json.error, /still capturing/);
+  assert.ok(fs.existsSync(path.join(dir, id)));
+
+  const ended = new Promise((resolve) => runs.once('end', resolve));
+  gate.resolve();
+  await ended;
+  assert.equal((await request(port, { method: 'DELETE', path: `/api/runs/${id}` })).status, 204);
+});
+
+test('DELETEs must come from a localhost origin', async (t) => {
+  const { port, dir } = await startServer(t);
+  const { id } = (await startRun(port)).json.run;
+  await waitForStatus(port, id, 'completed');
+
+  for (const origin of ['https://evil.example', 'null']) {
+    const res = await request(port, { method: 'DELETE', path: `/api/runs/${id}`, headers: { Origin: origin } });
+    assert.equal(res.status, 403, origin);
+  }
+  assert.ok(fs.existsSync(path.join(dir, id, 'run.json')));
+
+  const fromLocal = await request(port, {
+    method: 'DELETE', path: `/api/runs/${id}`, headers: { Origin: `http://localhost:${port}` },
+  });
+  assert.equal(fromLocal.status, 204);
+});
+
 test('streams progress as server-sent events', async (t) => {
   const gate = deferred();
   const { port } = await startServer(t, { gate });

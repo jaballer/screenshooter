@@ -287,6 +287,96 @@ test('an interrupted run can be retried', async (t) => {
   assert.deepEqual(saved.sites.map((s) => [s.status, s.file]), [['saved', 'Done.png'], ['saved', 'Midway.png']]);
 });
 
+test('delete removes a finished run and its screenshots', async (t) => {
+  const dir = makeTempDir(t);
+  const runs = new RunManager({ outputDir: dir, capture: fakeCapture() });
+
+  let ended = nextEnd(runs);
+  const kept = runs.start({ sites: SITES, options: OPTIONS, source: { type: 'urls' } });
+  await ended;
+  ended = nextEnd(runs);
+  const run = runs.start({ sites: SITES, options: OPTIONS, source: { type: 'urls' } });
+  await ended;
+  assert.ok(fs.existsSync(path.join(dir, run.id, '0.png')));
+
+  assert.equal(runs.delete(run.id), true);
+  assert.equal(fs.existsSync(path.join(dir, run.id)), false);
+  assert.equal(runs.get(run.id), null);
+  assert.deepEqual(runs.list().map((r) => r.id), [kept.id]);
+  assert.deepEqual(fs.readdirSync(path.join(dir, kept.id)).sort(), ['0.png', '1.png', 'run.json']);
+
+  // Already gone
+  assert.equal(runs.delete(run.id), false);
+});
+
+test('delete refuses the run being captured, but not other runs', async (t) => {
+  const dir = makeTempDir(t);
+  const gate = deferred();
+  const runs = new RunManager({ outputDir: dir, capture: fakeCapture() });
+
+  let ended = nextEnd(runs);
+  const finished = runs.start({ sites: SITES, options: OPTIONS, source: { type: 'urls' } });
+  await ended;
+
+  runs.capture = fakeCapture({ gate });
+  ended = nextEnd(runs);
+  const run = runs.start({ sites: SITES, options: OPTIONS, source: { type: 'urls' } });
+  assert.throws(
+    () => runs.delete(run.id),
+    (error) => error instanceof RunInProgressError && error.runId === run.id && /still capturing/.test(error.message),
+  );
+  assert.ok(fs.existsSync(path.join(dir, run.id, 'run.json')));
+  assert.equal(runs.delete(finished.id), true);
+
+  gate.resolve();
+  await ended;
+  assert.equal(runs.delete(run.id), true);
+  assert.deepEqual(runs.list(), []);
+});
+
+test('delete only removes folders of runs it knows about', (t) => {
+  const parent = makeTempDir(t);
+  const dir = path.join(parent, 'screenshots');
+  fs.mkdirSync(dir);
+  fs.writeFileSync(path.join(parent, 'keep.txt'), 'outside the output folder');
+  fs.writeFileSync(path.join(dir, 'GitHub.png'), 'old flat screenshot');
+  const runs = new RunManager({ outputDir: dir, capture: fakeCapture() });
+
+  // An empty ID would otherwise point at the output folder itself
+  for (const bad of ['', '.', '..', '../screenshots', '20260101-000000-abcd/..', 'GitHub.png', null, undefined, 42]) {
+    assert.equal(runs.delete(bad), false, String(bad));
+  }
+  assert.ok(fs.existsSync(path.join(parent, 'keep.txt')));
+  assert.ok(fs.existsSync(path.join(dir, 'GitHub.png')));
+
+  // A well-formed ID with no folder
+  assert.equal(runs.delete('20000101-000000-abcd'), false);
+
+  // A folder shaped like a run but without a run.json isn't in the history
+  fs.mkdirSync(path.join(dir, '20260101-000000-dead'));
+  fs.writeFileSync(path.join(dir, '20260101-000000-dead', 'notes.txt'), 'not a run');
+  assert.equal(runs.delete('20260101-000000-dead'), false);
+  assert.ok(fs.existsSync(path.join(dir, '20260101-000000-dead', 'notes.txt')));
+});
+
+test('delete removes a run left interrupted by a server restart', (t) => {
+  const dir = makeTempDir(t);
+  const runs = new RunManager({ outputDir: dir, capture: fakeCapture() });
+  const id = '20260101-000000-abcd';
+  fs.mkdirSync(path.join(dir, id));
+  fs.writeFileSync(path.join(dir, id, 'run.json'), JSON.stringify({
+    id,
+    status: 'running',
+    source: { type: 'urls' },
+    startedAt: '2026-01-01T00:00:00.000Z',
+    sites: [{ name: 'Midway', status: 'capturing', file: null, error: null }],
+  }));
+
+  assert.equal(runs.get(id).status, 'interrupted');
+  assert.equal(runs.delete(id), true);
+  assert.equal(fs.existsSync(path.join(dir, id)), false);
+});
+
 test('get rejects bad IDs and reports runs left running as interrupted', (t) => {
   const dir = makeTempDir(t);
   const runs = new RunManager({ outputDir: dir, capture: fakeCapture() });

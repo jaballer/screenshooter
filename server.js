@@ -41,15 +41,15 @@ function createApp({ config, runs }) {
 
   const api = express.Router();
 
-  // Requests that change state must be JSON from a localhost page. Browsers
-  // won't send cross-site JSON without a CORS preflight, which this server
-  // never approves.
+  // Requests that change state must come from a localhost page, and POSTs
+  // must be JSON. Browsers won't send cross-site JSON or a DELETE without a
+  // CORS preflight, which this server never approves. A DELETE has no body.
   api.use((req, res, next) => {
-    if (req.method !== 'POST') return next();
+    if (req.method !== 'POST' && req.method !== 'DELETE') return next();
     if (!isLocalOrigin(req.headers.origin)) {
       return res.status(403).json({ error: 'Cross-origin requests are not allowed' });
     }
-    if (!req.is('application/json')) {
+    if (req.method === 'POST' && !req.is('application/json')) {
       return res.status(415).json({ error: 'Expected a JSON request body' });
     }
     next();
@@ -152,6 +152,19 @@ function createApp({ config, runs }) {
     if (!runs.get(req.params.id)) return res.status(404).json({ error: 'Run not found' });
     if (!runs.cancel(req.params.id)) return res.status(409).json({ error: 'That run is not running' });
     res.status(202).json({ ok: true });
+  });
+
+  // Delete a finished run's folder and screenshots for good
+  api.delete('/runs/:id', (req, res) => {
+    try {
+      if (!runs.delete(req.params.id)) return res.status(404).json({ error: 'Run not found' });
+      res.status(204).end();
+    } catch (error) {
+      if (error instanceof RunInProgressError) {
+        return res.status(409).json({ error: error.message, activeRunId: error.runId });
+      }
+      throw error;
+    }
   });
 
   // Live progress as Server-Sent Events: the full run on connect and after

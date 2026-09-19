@@ -83,6 +83,7 @@
             <span id="run-status" class="badge"></span>
             <button type="button" id="retry-all-button" class="button" data-retry hidden title="Capture the failed and cancelled sites again"></button>
             <button type="button" id="cancel-button" class="button" hidden>Cancel</button>
+            <button type="button" id="delete-button" class="button danger" hidden title="Delete this run and its screenshots">Delete</button>
           </div>
         </div>
 
@@ -91,6 +92,7 @@
 
         <div id="run-error" class="alert error" role="alert" hidden></div>
         <div id="retry-error" class="alert error" role="alert" hidden></div>
+        <div id="delete-error" class="alert error" role="alert" hidden></div>
 
         <details id="skipped" class="skipped" hidden>
           <summary></summary>

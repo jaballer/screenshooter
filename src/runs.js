@@ -51,8 +51,8 @@ function settleUnfinishedSites(run, reason) {
 }
 
 class RunInProgressError extends Error {
-  constructor(runId) {
-    super('A capture is already running');
+  constructor(runId, message = 'A capture is already running') {
+    super(message);
     this.runId = runId;
   }
 }
@@ -219,6 +219,21 @@ class RunManager extends EventEmitter {
     controller.abort();
     this.save(run);
     this.emit('update', run);
+    return true;
+  }
+
+  // Remove a run's folder, screenshots and all. Returns false if there is no
+  // such run, and refuses the run being captured.
+  delete(id) {
+    if (!isValidRunId(id)) return false;
+    if (this.active && this.active.run.id === id) {
+      throw new RunInProgressError(id, 'This run is still capturing. Cancel it or let it finish first.');
+    }
+    // A folder shaped like a run but without a readable run.json isn't in the
+    // history, so it isn't ours to remove
+    if (!this.get(id)) return false;
+    // Synchronous, so a retry can't start on this run while it's being removed
+    fs.rmSync(path.join(this.outputDir, id), { recursive: true });
     return true;
   }
 
