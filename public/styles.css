@@ -195,6 +195,7 @@ textarea { font-family: var(--mono); font-size: 0.88rem; line-height: 1.6; resiz
 
 .alert { border-radius: 8px; padding: 12px 14px; margin-bottom: 20px; font-size: 0.92rem; }
 .alert.error { background: var(--danger-soft); color: var(--danger); }
+.alert.info { background: var(--accent-soft); color: var(--text); }
 .alert p { margin: 0; }
 .alert ul { margin: 8px 0 0; padding-left: 18px; }
 
@@ -340,6 +341,9 @@ html.viewer-open { overflow: hidden; }
   main { padding: 24px 16px 48px; }
   .option-grid { grid-template-columns: 1fr; }
   .run-header { flex-direction: column; }
+  /* The header's buttons wrap to a second row instead of squeezing their labels */
+  .run-actions { flex-wrap: wrap; }
+  .run-actions .button { white-space: nowrap; }
   /* Viewer: arrows move to the bottom corners so they don't cover the page */
   .viewer-stage { padding: 12px 12px 88px; }
   .viewer-nav { top: auto; bottom: 20px; transform: none; background: rgb(40 44 52 / 0.9); }
