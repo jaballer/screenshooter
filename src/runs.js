@@ -232,8 +232,14 @@ class RunManager extends EventEmitter {
     // A folder shaped like a run but without a readable run.json isn't in the
     // history, so it isn't ours to remove
     if (!this.get(id)) return false;
-    // Synchronous, so a retry can't start on this run while it's being removed
-    fs.rmSync(path.join(this.outputDir, id), { recursive: true });
+    // Synchronous, so a retry can't start on this run while it's being removed.
+    // run.json goes last: if some file can't be removed (a screenshot open in
+    // another app on Windows, say), the run stays in the history to delete again.
+    const runDir = path.join(this.outputDir, id);
+    for (const entry of fs.readdirSync(runDir)) {
+      if (entry !== MANIFEST_FILE) fs.rmSync(path.join(runDir, entry), { recursive: true, force: true });
+    }
+    fs.rmSync(runDir, { recursive: true });
     return true;
   }
 

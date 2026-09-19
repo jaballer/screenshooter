@@ -163,7 +163,9 @@ function createApp({ config, runs }) {
       if (error instanceof RunInProgressError) {
         return res.status(409).json({ error: error.message, activeRunId: error.runId });
       }
-      throw error;
+      // run.json is removed last, so the run is still listed and can be deleted again
+      console.error(`Could not delete run ${req.params.id}:`, error);
+      res.status(500).json({ error: "Some of this run's files couldn't be removed. Close any that are open in another app, then try again." });
     }
   });
 

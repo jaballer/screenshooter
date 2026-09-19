@@ -367,9 +367,16 @@ function isRetryable(site) {
   return site.status === 'failed' || site.status === 'cancelled';
 }
 
+// The run on screen, or null while another run is loading in its place. Until
+// then the view and its buttons still show the previous run, and acting on
+// them would retry or delete a run that's no longer selected.
+function shownRun() {
+  return state.run && state.run.id === state.currentRunId ? state.run : null;
+}
+
 // Retry the sites at `indexes`, or every failed and cancelled site if omitted
 async function retrySites(indexes) {
-  const run = state.run;
+  const run = shownRun();
   if (!run) return;
   const buttons = document.querySelectorAll('[data-retry]');
   for (const button of buttons) button.disabled = true; // no double submits
@@ -407,7 +414,7 @@ function showRetryError(error) {
 // hidden while the run is capturing, and the server refuses then too.
 
 async function deleteRun() {
-  const run = state.run;
+  const run = shownRun();
   if (!run) return;
   const shots = run.sites.filter((site) => site.status === 'saved').length;
   const question = shots ? `Delete this run and its ${plural(shots, 'screenshot')}?` : 'Delete this run?';
@@ -652,6 +659,7 @@ async function startCapture(event) {
 
 async function cancelRun() {
   const button = $('#cancel-button');
+  if (button.dataset.runId !== shownRun()?.id) return;
   button.disabled = true;
   button.textContent = 'Cancelling…';
   try {

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { RunManager, RunInProgressError, InvalidRetryError, isValidRunId, createRunId } = require('../src/runs');
-const { makeTempDir } = require('./helpers');
+const { makeTempDir, canMakeStuckFiles, addStuckFile } = require('./helpers');
 
 const SITES = [
   { name: 'One', url: 'https://one.example/' },
@@ -307,6 +307,27 @@ test('delete removes a finished run and its screenshots', async (t) => {
 
   // Already gone
   assert.equal(runs.delete(run.id), false);
+});
+
+test('a delete that fails partway keeps the run, so it can be deleted again', { skip: !canMakeStuckFiles }, async (t) => {
+  const dir = makeTempDir(t);
+  const runs = new RunManager({ outputDir: dir, capture: fakeCapture() });
+  const ended = nextEnd(runs);
+  const run = runs.start({ sites: SITES, options: OPTIONS, source: { type: 'urls' } });
+  await ended;
+
+  const unstick = addStuckFile(path.join(dir, run.id));
+  try {
+    assert.throws(() => runs.delete(run.id));
+    // Whatever else went, run.json is still there and the run still listed
+    assert.ok(fs.existsSync(path.join(dir, run.id, 'run.json')));
+    assert.deepEqual(runs.list().map((r) => r.id), [run.id]);
+  } finally {
+    unstick();
+  }
+
+  assert.equal(runs.delete(run.id), true);
+  assert.equal(fs.existsSync(path.join(dir, run.id)), false);
 });
 
 test('delete refuses the run being captured, but not other runs', async (t) => {

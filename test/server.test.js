@@ -6,7 +6,7 @@ const http = require('http');
 const { createApp } = require('../server');
 const { RunManager } = require('../src/runs');
 const { DEFAULTS } = require('../src/config');
-const { makeTempDir, request, listen, waitFor } = require('./helpers');
+const { makeTempDir, request, listen, waitFor, canMakeStuckFiles, addStuckFile } = require('./helpers');
 
 function deferred() {
   let resolve;
@@ -312,6 +312,27 @@ test('deleting an unknown or malformed run is a 404', async (t) => {
     assert.equal(res.json.error, 'Run not found', urlPath);
   }
   assert.ok(fs.existsSync(dir));
+});
+
+test('a delete that fails partway says so, and can be tried again', { skip: !canMakeStuckFiles }, async (t) => {
+  const { port, dir } = await startServer(t);
+  const { id } = (await startRun(port)).json.run;
+  await waitForStatus(port, id, 'completed');
+  t.mock.method(console, 'error', () => {}); // the server logs the failure
+
+  const unstick = addStuckFile(path.join(dir, id));
+  let res;
+  try {
+    res = await request(port, { method: 'DELETE', path: `/api/runs/${id}` });
+  } finally {
+    unstick();
+  }
+  assert.equal(res.status, 500);
+  assert.match(res.json.error, /couldn't be removed/);
+  assert.equal((await request(port, { path: `/api/runs/${id}` })).status, 200);
+
+  assert.equal((await request(port, { method: 'DELETE', path: `/api/runs/${id}` })).status, 204);
+  assert.equal(fs.existsSync(path.join(dir, id)), false);
 });
 
 test('refuses to delete the run in progress', async (t) => {
