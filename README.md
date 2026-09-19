@@ -110,6 +110,7 @@ Captured screenshots will be saved in the `screenshots/` folder (or the folder s
 
 ## Development
 - `npm test` runs the test suite with Node's built-in test runner. The browser tests launch a real headless Chrome against a local page, so no internet connection is needed
+- The tests also run automatically on GitHub for every pull request and every push to `main`, on the current Node LTS versions
 - `src/` holds the shared code: `sites.js` (parsing and URL checks), `capture.js` (the Puppeteer capture loop), `runs.js` (web run folders and history), `filenames.js`, and `config.js`
 - `server.js` is the web app's server, and `public/` holds its page. `screenshot.js` is the command-line entry point
 
