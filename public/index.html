@@ -6,6 +6,7 @@
   <title>ScreenShooter</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📸</text></svg>">
   <link rel="stylesheet" href="/styles.css">
+  <script src="/url-list.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
 <body>
@@ -25,6 +26,8 @@
         <form id="new-run-form" novalidate>
           <h1>New capture</h1>
           <p class="muted lead">Full-page screenshots of every site, saved to a folder for this run.</p>
+
+          <div id="prefill-note" class="alert info" role="status" hidden></div>
 
           <div class="segmented" role="tablist" aria-label="Where the sites come from">
             <button type="button" role="tab" id="tab-urls" data-source="urls" aria-selected="true" aria-controls="panel-urls">Paste URLs</button>
@@ -81,6 +84,7 @@
           </div>
           <div class="run-actions">
             <span id="run-status" class="badge"></span>
+            <a id="run-again-button" class="button" hidden title="Start a new capture with this run’s sites and options">Run again</a>
             <button type="button" id="retry-all-button" class="button" data-retry hidden title="Capture the failed and cancelled sites again"></button>
             <button type="button" id="cancel-button" class="button" hidden>Cancel</button>
           </div>

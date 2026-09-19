@@ -37,6 +37,8 @@ Then open [http://localhost:5055](http://localhost:5055). From there you can:
 - Paste URLs, one per line. Put a name first (`Name, URL`) to choose the screenshot's filename.
 - Or upload a CSV with a `url` column and an optional `name` column.
 - Set the width, timeout, and headless mode for the run, then start it.
+- The form remembers the width, timeout, and headless mode you last used, so you don't have to set them each time.
+- Capture the same sites again with the Run again button in a past run's header. It opens the form filled in with that run's sites and options (a CSV run's sites become pasted lines), so you can change anything before you start.
 - Watch each site's progress live, cancel a run, and browse past runs in the History sidebar.
 - Retry sites that failed or were cancelled with the Retry button on their card, or all of them at once from the run's header. Retried screenshots are saved into the same run.
 - Click a thumbnail to open the screenshot viewer. Scroll to see the whole page, use ← and → (or swipe) to move between screenshots, and press Esc to close. Cmd/Ctrl-click a thumbnail to open the image in a new tab instead.

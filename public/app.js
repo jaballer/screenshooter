@@ -3,6 +3,7 @@
 const MAX_CSV_BYTES = 5 * 1024 * 1024;
 
 const state = {
+  config: null, // option defaults and limits from /api/config
   runs: [],
   currentRunId: null,
   run: null, // the run being shown, kept current by the progress stream
@@ -110,7 +111,7 @@ const SITE_STATUS_LABELS = {
   cancelled: 'Cancelled',
 };
 
-// Views and routing (#/new, #/runs/<id>)
+// Views and routing (#/new, #/new?from=<id>, #/runs/<id>)
 
 function showView(name) {
   for (const view of ['new-run', 'run', 'missing']) {
@@ -132,15 +133,39 @@ function route() {
   if (match) {
     showRun(match[1]);
   } else {
-    showNewRun();
+    showNewRun(location.hash.match(/^#\/new\?from=([\w-]+)$/)?.[1]);
   }
 }
 
-function showNewRun() {
+// The New capture form keeps whatever is in it, unless `fromId` names a run
+// to copy (see showNewRunFrom)
+function showNewRun(fromId) {
   closeStream();
   state.currentRunId = null;
-  showView('new-run');
   renderRunList();
+  if (fromId) {
+    showNewRunFrom(fromId);
+  } else {
+    $('#prefill-note').hidden = true;
+    showView('new-run');
+  }
+}
+
+// "Run again" links here: the form filled in with a run's sites and options,
+// ready to edit before starting. Being a route rather than in-memory state,
+// it survives a reload and can be bookmarked to repeat the same list.
+async function showNewRunFrom(id) {
+  const hash = location.hash;
+  let run;
+  try {
+    ({ run } = await api(`/runs/${encodeURIComponent(id)}`));
+  } catch {
+    if (location.hash === hash) showView('missing');
+    return;
+  }
+  if (location.hash !== hash) return; // navigated away while loading
+  fillFormFromRun(run);
+  showView('new-run');
 }
 
 async function showRun(id) {
@@ -245,6 +270,11 @@ function renderRun(run) {
   const status = $('#run-status');
   status.textContent = RUN_STATUS_LABELS[run.status] || run.status;
   status.className = `badge ${run.status}`;
+
+  // Hidden while capturing, since only one capture can run at a time
+  const runAgain = $('#run-again-button');
+  runAgain.hidden = running;
+  runAgain.href = `#/new?from=${run.id}`;
 
   const cancel = $('#cancel-button');
   cancel.hidden = !running;
@@ -516,6 +546,69 @@ function bindViewer() {
 
 // New capture form
 
+// The form starts from the options of the last capture started here, kept in
+// localStorage. Storage can be missing or blocked (some private windows), so
+// every access is guarded and the server's defaults fill in.
+const OPTIONS_KEY = 'screenshooter.options';
+
+function loadSavedOptions() {
+  try {
+    return JSON.parse(localStorage.getItem(OPTIONS_KEY));
+  } catch {
+    return null;
+  }
+}
+
+function saveOptions(options) {
+  try {
+    localStorage.setItem(OPTIONS_KEY, JSON.stringify(options));
+  } catch {
+    // Not remembered this time; the capture itself is unaffected
+  }
+}
+
+// The given options where they're within the server's limits, otherwise its
+// defaults
+function pickOptions(options) {
+  const { defaults, limits } = state.config;
+  const given = options && typeof options === 'object' ? options : {};
+  const inRange = (key) => Number.isInteger(given[key]) && given[key] >= limits[key].min && given[key] <= limits[key].max;
+  return {
+    width: inRange('width') ? given.width : defaults.width,
+    timeout: inRange('timeout') ? given.timeout : defaults.timeout,
+    headless: typeof given.headless === 'boolean' ? given.headless : defaults.headless,
+  };
+}
+
+// Timeouts are in milliseconds everywhere but the form, which shows seconds
+function setFormOptions({ width, timeout, headless }) {
+  $('#width').value = width;
+  $('#timeout').value = Math.round(timeout / 1000);
+  $('#headless').checked = headless;
+}
+
+// Copy a run's sites and options into the form. CSV runs become pasted lines
+// too, so the list can be edited.
+function fillFormFromRun(run) {
+  const { text, renamed } = formatUrlList(run.sites);
+  setSource('urls');
+  $('#urls').value = text;
+  setFormOptions(pickOptions(run.options));
+
+  const note = $('#prefill-note');
+  note.replaceChildren(h('p', {},
+    'Copied from ',
+    h('a', { href: `#/runs/${run.id}` }, `${sourceLabel(run.source)} · ${formatDate(run.startedAt)}`),
+    '. Change anything you like, then start the capture.'));
+  if (renamed.length > 0) {
+    const one = renamed.length === 1;
+    note.append(
+      h('p', {}, `${plural(renamed.length, 'site')} will be named after ${one ? 'its URL' : 'their URLs'} instead, because ${one ? 'its name' : 'their names'} can’t go on a pasted line:`),
+      h('ul', {}, renamed.map((site) => h('li', {}, site.name))));
+  }
+  note.hidden = false;
+}
+
 function setSource(source) {
   state.source = source;
   for (const tab of document.querySelectorAll('[data-source]')) {
@@ -590,6 +683,7 @@ async function startCapture(event) {
         },
       },
     });
+    saveOptions(run.options); // as the server accepted them
     updateRunSummary(run);
     location.hash = `#/runs/${run.id}`;
   } catch (error) {
@@ -611,18 +705,16 @@ async function cancelRun() {
   }
 }
 
-function bindForm({ defaults, limits }) {
+function bindForm({ limits }) {
   const width = $('#width');
   width.min = limits.width.min;
   width.max = limits.width.max;
-  width.value = defaults.width;
 
   const timeout = $('#timeout');
   timeout.min = limits.timeout.min / 1000;
   timeout.max = limits.timeout.max / 1000;
-  timeout.value = Math.round(defaults.timeout / 1000);
 
-  $('#headless').checked = defaults.headless;
+  setFormOptions(pickOptions(loadSavedOptions()));
 
   for (const tab of document.querySelectorAll('[data-source]')) {
     tab.addEventListener('click', () => setSource(tab.dataset.source));
@@ -649,6 +741,7 @@ function bindForm({ defaults, limits }) {
 
 async function init() {
   const [config, { runs }] = await Promise.all([api('/config'), api('/runs')]);
+  state.config = config;
   bindForm(config);
   bindViewer();
   state.runs = runs;
