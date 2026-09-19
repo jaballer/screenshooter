@@ -3,6 +3,11 @@ const path = require('path');
 const puppeteer = require('puppeteer');
 const { createFilenameAllocator } = require('./filenames');
 
+// Pages open in a window this tall at the chosen width, like a typical desktop
+// browser. Anything sized to the window (such as a 100vh hero) is laid out at
+// this height, and the screenshot still covers the whole page.
+const VIEWPORT_HEIGHT = 900;
+
 // Capture a full-page screenshot of each site, one at a time. Progress is
 // reported through onEvent; a site that fails is recorded and the run moves on.
 // Aborting `signal` closes the browser, which stops the site in progress.
@@ -48,18 +53,16 @@ async function captureSites(sites, options) {
       let page;
       try {
         page = await browser.newPage();
-        await page.setViewport({ width, height: 1 });
+        await page.setViewport({ width, height: VIEWPORT_HEIGHT });
         await page.goto(site.url, { waitUntil: 'networkidle2', timeout });
-
-        // Adjust height dynamically based on content
-        const bodyHandle = await page.$('body');
-        const { height } = await bodyHandle.boundingBox();
-        await bodyHandle.dispose();
-        await page.setViewport({ width, height: Math.ceil(height) });
 
         const filename = allocateFilename(site.name);
         const screenshotPath = path.join(outputDir, filename);
-        await page.screenshot({ path: screenshotPath, fullPage: true });
+        // captureBeyondViewport is Puppeteer's default, set here because this
+        // relies on it: the whole page is captured without resizing the window.
+        // With it off, Puppeteer first grows the window to the page's height,
+        // stretching anything sized to the window.
+        await page.screenshot({ path: screenshotPath, fullPage: true, captureBeyondViewport: true });
 
         const result = { ...base, status: 'saved', file: filename, path: screenshotPath, durationMs: Date.now() - startedAt };
         results.push(result);

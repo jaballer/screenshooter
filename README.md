@@ -102,7 +102,7 @@ Captured screenshots will be saved in the `screenshots/` folder (or the folder s
 ## Technical Details
 - Screenshots are captured after the page reaches the `networkidle2` state (when there are no more than 2 network connections for at least 500ms)
 - Failed screenshots are logged but won't stop the run
-- The tool automatically adjusts screenshot height based on page content
+- Pages open in a browser window of the chosen width and 900px tall, and the screenshot covers the whole page. Sections sized to fill the window (like full-screen hero sections) come out 900px tall, and a page shorter than the window is captured at the full 900px
 - Screenshots are saved as PNG files, using the site's name as the filename
 - Filenames are automatically sanitized (unsafe characters replaced, very long names shortened) and duplicate names get a numeric suffix, so no special-character handling is required in the CSV
 - Only `http` and `https` URLs are captured. Domains without a scheme get `https://`, and local addresses (`localhost`, private IPs, `.test`) get `http://`. Rows that can't be used are skipped and listed with the reason

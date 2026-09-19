@@ -12,7 +12,7 @@ function makeTempDir(t) {
 // A stand-in for puppeteer.launch that records what happened. `goto` can be
 // overridden per URL to simulate slow or failing sites.
 function createFakeLaunch({ goto } = {}) {
-  const state = { launchOptions: null, browserClosed: false, pagesOpened: 0, pagesClosed: 0 };
+  const state = { launchOptions: null, browserClosed: false, pagesOpened: 0, pagesClosed: 0, viewports: [], screenshots: [] };
 
   const launch = async (options) => {
     state.launchOptions = options;
@@ -20,15 +20,15 @@ function createFakeLaunch({ goto } = {}) {
       async newPage() {
         state.pagesOpened += 1;
         return {
-          async setViewport() {},
+          async setViewport(viewport) {
+            state.viewports.push(viewport);
+          },
           async goto(url) {
             if (goto) await goto(url);
           },
-          async $() {
-            return { async boundingBox() { return { height: 480.4 }; }, async dispose() {} };
-          },
-          async screenshot({ path: file }) {
-            fs.writeFileSync(file, 'fake png');
+          async screenshot(screenshotOptions) {
+            state.screenshots.push(screenshotOptions);
+            fs.writeFileSync(screenshotOptions.path, 'fake png');
           },
           async close() {
             state.pagesClosed += 1;
