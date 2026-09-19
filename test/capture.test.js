@@ -36,6 +36,17 @@ test('captures every site and reports progress in order', async (t) => {
   assert.equal(state.browserClosed, true);
 });
 
+test('opens each page in a 900px-tall window and captures the whole page', async (t) => {
+  const dir = makeTempDir(t);
+  const { launch, state } = createFakeLaunch();
+
+  await captureSites(SITES.slice(0, 2), baseOptions(dir, launch, { width: 1024 }));
+
+  // One viewport per page, never resized to the content (issue #2)
+  assert.deepEqual(state.viewports, [{ width: 1024, height: 900 }, { width: 1024, height: 900 }]);
+  assert.deepEqual(state.screenshots.map((s) => [s.fullPage, s.captureBeyondViewport]), [[true, true], [true, true]]);
+});
+
 test('a failing site is recorded and the run continues', async (t) => {
   const dir = makeTempDir(t);
   const { launch, state } = createFakeLaunch({

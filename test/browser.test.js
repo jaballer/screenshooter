@@ -14,6 +14,12 @@ const { makeTempDir, listen, request, waitFor } = require('./helpers');
 
 const ROOT = path.join(__dirname, '..');
 const PAGE = '<!doctype html><title>Fixture</title><body style="margin:0"><div style="height:1500px;background:#4f46e5">Hello</div></body>';
+// A full-window hero followed by 1500px of content (issue #2)
+const HERO_PAGE = '<!doctype html><title>Hero</title><style>body{margin:0} .hero{height:100vh}</style><div class="hero">Hero</div><div style="height:1500px">Content</div>';
+// <body> has no box of its own, so it can't be measured
+const CONTENTS_PAGE = '<!doctype html><title>Contents</title><body style="margin:0;display:contents"><div style="height:1500px">Content</div></body>';
+// An SVG document has no <body> at all
+const SVG_PAGE = '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="1200"><rect width="400" height="1200" fill="#4f46e5"/></svg>';
 
 // Width and height from a PNG's IHDR chunk
 function pngSize(file) {
@@ -22,10 +28,10 @@ function pngSize(file) {
   return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
 }
 
-async function startFixtureSite(t) {
+async function startFixtureSite(t, page = PAGE, contentType = 'text/html') {
   const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(PAGE);
+    res.writeHead(200, { 'Content-Type': contentType });
+    res.end(page);
   });
   const port = await listen(server);
   t.after(() => server.close());
@@ -53,6 +59,31 @@ test('captures a full-page screenshot at the requested width', { timeout: 60000 
   const { width, height } = pngSize(path.join(dir, 'Fixture.png'));
   assert.equal(width, 800);
   assert.ok(height >= 1500, `height ${height}`);
+});
+
+test('a full-window section stays one window tall in the screenshot', { timeout: 60000 }, async (t) => {
+  const url = await startFixtureSite(t, HERO_PAGE);
+  const dir = makeTempDir(t);
+
+  const summary = await captureSites([{ name: 'Hero', url }], { outputDir: dir, width: 1440, timeout: 15000, headless: true });
+
+  assert.equal(summary.saved, 1, JSON.stringify(summary.results));
+  // The 900px window plus the 1500px below it. Measuring the page in a 1px
+  // window and then resizing it stretched the hero to 1501px (3001 in total).
+  assert.deepEqual(pngSize(path.join(dir, 'Hero.png')), { width: 1440, height: 900 + 1500 });
+});
+
+test('pages whose <body> cannot be measured are still captured', { timeout: 60000 }, async (t) => {
+  const contentsUrl = await startFixtureSite(t, CONTENTS_PAGE);
+  const svgUrl = await startFixtureSite(t, SVG_PAGE, 'image/svg+xml');
+  const dir = makeTempDir(t);
+  const sites = [{ name: 'Contents', url: contentsUrl }, { name: 'Drawing', url: svgUrl }];
+
+  const summary = await captureSites(sites, { outputDir: dir, width: 800, timeout: 15000, headless: true });
+
+  assert.equal(summary.saved, 2, JSON.stringify(summary.results));
+  assert.deepEqual(pngSize(path.join(dir, 'Contents.png')), { width: 800, height: 1500 });
+  assert.deepEqual(pngSize(path.join(dir, 'Drawing.png')), { width: 800, height: 1200 });
 });
 
 test('the CLI saves screenshots and exits non-zero when a site fails', { timeout: 60000 }, async (t) => {
