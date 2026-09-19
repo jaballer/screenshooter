@@ -51,8 +51,8 @@ function settleUnfinishedSites(run, reason) {
 }
 
 class RunInProgressError extends Error {
-  constructor(runId) {
-    super('A capture is already running');
+  constructor(runId, message = 'A capture is already running') {
+    super(message);
     this.runId = runId;
   }
 }
@@ -219,6 +219,29 @@ class RunManager extends EventEmitter {
     controller.abort();
     this.save(run);
     this.emit('update', run);
+    return true;
+  }
+
+  // Remove a run's folder, screenshots and all. Returns false if there is no
+  // such run, and refuses the run being captured.
+  delete(id) {
+    if (!isValidRunId(id)) return false;
+    if (this.active && this.active.run.id === id) {
+      throw new RunInProgressError(id, 'This run is still capturing. Cancel it or let it finish first.');
+    }
+    // Only runs in the history are ours to remove: a real folder with a readable
+    // run.json. A symlink isn't listed, and emptying it would delete files
+    // wherever it points.
+    const runDir = path.join(this.outputDir, id);
+    if (!fs.lstatSync(runDir, { throwIfNoEntry: false })?.isDirectory()) return false;
+    if (!this.get(id)) return false;
+    // Synchronous, so a retry can't start on this run while it's being removed.
+    // run.json goes last: if some file can't be removed (a screenshot open in
+    // another app on Windows, say), the run stays in the history to delete again.
+    for (const entry of fs.readdirSync(runDir)) {
+      if (entry !== MANIFEST_FILE) fs.rmSync(path.join(runDir, entry), { recursive: true, force: true });
+    }
+    fs.rmSync(runDir, { recursive: true });
     return true;
   }
 

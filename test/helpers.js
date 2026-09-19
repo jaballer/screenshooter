@@ -91,4 +91,18 @@ async function waitFor(check, { timeout = 5000, interval = 20 } = {}) {
   throw new Error('Timed out waiting for condition');
 }
 
-module.exports = { makeTempDir, createFakeLaunch, request, listen, waitFor };
+// Put a file in `dir` that can't be removed, standing in for a screenshot
+// that's open in another app on Windows: it sits in a read-only folder.
+// Returns a function that makes it removable again. Root ignores folder
+// permissions and Windows doesn't use them, so check canMakeStuckFiles first.
+const canMakeStuckFiles = process.platform !== 'win32' && process.getuid?.() !== 0;
+
+function addStuckFile(dir) {
+  const stuck = path.join(dir, 'stuck');
+  fs.mkdirSync(stuck);
+  fs.writeFileSync(path.join(stuck, 'open.png'), 'in use');
+  fs.chmodSync(stuck, 0o555);
+  return () => fs.chmodSync(stuck, 0o755);
+}
+
+module.exports = { makeTempDir, createFakeLaunch, request, listen, waitFor, canMakeStuckFiles, addStuckFile };
