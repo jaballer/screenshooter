@@ -1,0 +1,48 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Node ${{ matrix.node-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # Current Node LTS lines
+        node-version: [22, 24]
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      # Chrome for the browser tests, downloaded by Puppeteer during npm ci.
+      # Keyed on the lockfile, so a Puppeteer upgrade fetches a fresh copy.
+      - name: Cache Puppeteer's Chrome
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/puppeteer
+          key: puppeteer-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      # Ubuntu 23.10+ uses AppArmor to block the unprivileged user namespaces
+      # Chrome's sandbox needs ("No usable sandbox!"). Lift that on the runner
+      # rather than turning the sandbox off in the app.
+      - name: Allow Chrome's sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - run: npm ci
+
+      - run: npm test
