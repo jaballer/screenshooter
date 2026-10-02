@@ -6,7 +6,7 @@ ScreenShooter is a simple, automated website screenshot tool built using Node.js
 - Local web app: paste URLs or upload a CSV, watch progress live, browse results in a gallery
 - History of past runs, each saved in its own folder
 - Command-line mode that reads website URLs from a CSV file
-- Captures full-page screenshots with a customizable width
+- Captures full-page screenshots with a customizable width, several sites at once, scrolling each page first so lazy-loaded content shows up
 - Accepts bare domains (`github.com`) and local dev servers (`localhost:3000`)
 - Supports environment variable configuration
 - Error handling with detailed logging
@@ -36,10 +36,11 @@ npm start
 Then open [http://localhost:5055](http://localhost:5055). From there you can:
 - Paste URLs, one per line. Put a name first (`Name, URL`) to choose the screenshot's filename.
 - Or upload a CSV with a `url` column and an optional `name` column.
-- Set the width, timeout, and headless mode for the run, then start it.
-- The form remembers the width, timeout, and headless mode you last used, so you don't have to set them each time.
+- Set the width, timeout, sites at once, lazy-content loading, and headless mode for the run, then start it. Capturing several sites at once is faster but uses more memory. With headless off, sites are captured one at a time, because Chrome pauses background tabs.
+- The form remembers the options you last used, so you don't have to set them each time.
 - Capture the same sites again with the Run again button in a past run's header. It opens the form filled in with that run's sites and options (a CSV run's sites become pasted lines), so you can change anything before you start.
 - Watch each site's progress live, cancel a run, and browse past runs in the History sidebar.
+- Download a run's screenshots as a ZIP with the Download ZIP button in its header.
 - Retry sites that failed or were cancelled with the Retry button on their card, or all of them at once from the run's header. Retried screenshots are saved into the same run.
 - Click a thumbnail to open the screenshot viewer. Scroll to see the whole page, use ← and → (or swipe) to move between screenshots, and press Esc to close. Cmd/Ctrl-click a thumbnail to open the image in a new tab instead.
 
@@ -62,6 +63,8 @@ PORT=5055               # Port for the web app
 - `SCREENSHOT_WIDTH`: Sets the viewport width for screenshots (default: 1440px)
 - `HEADLESS_MODE`: Runs the browser without a window unless set to `false` (default: true)
 - `TIMEOUT`: Maximum time to wait for a page to load in milliseconds (default: 60000)
+- `CONCURRENCY`: How many sites to capture at once, from 1 to 5 (default: 3)
+- `LAZY_LOAD`: Scrolls each page before the shot so lazy-loaded images and sections appear, unless set to `false` (default: true)
 - `CSV_FILE`: Name of the input CSV file (default: websites.csv)
 - `OUTPUT_DIR`: Directory where screenshots will be saved (default: screenshots)
 - `PORT`: Port the web app listens on (default: 5055)

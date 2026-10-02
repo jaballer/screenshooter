@@ -1,4 +1,4 @@
-const { loadConfig } = require('./src/config');
+const { loadConfig, runDefaults } = require('./src/config');
 const { readSitesFromCsvFile, InputError } = require('./src/sites');
 const { captureSites } = require('./src/capture');
 
@@ -21,6 +21,8 @@ async function main() {
     width: config.width,
     timeout: config.timeout,
     headless: config.headless,
+    concurrency: runDefaults(config).concurrency, // kept within 1-5, like the web app's
+    lazyLoad: config.lazyLoad,
     onEvent: (event) => {
       if (event.type === 'site-start') console.log(`Capturing: ${event.name} - ${event.url}`);
       if (event.type === 'site-done') console.log(`Saved: ${event.path}`);

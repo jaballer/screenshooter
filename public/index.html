@@ -60,12 +60,23 @@
                 <span class="field-label">Timeout per site</span>
                 <span class="input-with-unit"><input type="number" id="timeout" required step="1" inputmode="numeric"><span>sec</span></span>
               </label>
+              <label class="field">
+                <span class="field-label">Sites at once</span>
+                <span class="input-with-unit"><input type="number" id="concurrency" required step="1" inputmode="numeric"><span>tabs</span></span>
+              </label>
             </div>
+            <label class="check">
+              <input type="checkbox" id="lazy-load">
+              <span>
+                <span class="check-title">Load lazy content</span>
+                <span class="hint">Scroll each page before the shot so lazy-loaded images and sections appear. Adds a few seconds per site.</span>
+              </span>
+            </label>
             <label class="check">
               <input type="checkbox" id="headless">
               <span>
                 <span class="check-title">Headless</span>
-                <span class="hint">Capture in the background. Turn off to watch Chrome open each site.</span>
+                <span class="hint">Capture in the background. Turn off to watch Chrome open each site (one at a time).</span>
               </span>
             </label>
           </fieldset>
@@ -84,6 +95,7 @@
           </div>
           <div class="run-actions">
             <span id="run-status" class="badge"></span>
+            <a id="download-button" class="button" hidden title="Download the saved screenshots as a ZIP file">Download ZIP</a>
             <a id="run-again-button" class="button" hidden title="Start a new capture with this run’s sites and options">Run again</a>
             <button type="button" id="retry-all-button" class="button" data-retry hidden title="Capture the failed and cancelled sites again"></button>
             <button type="button" id="cancel-button" class="button" hidden>Cancel</button>
