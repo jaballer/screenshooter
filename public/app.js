@@ -172,6 +172,7 @@ async function showRun(id) {
   closeStream();
   state.currentRunId = id;
   $('#retry-error').hidden = true;
+  $('#delete-error').hidden = true;
   renderRunList();
 
   let run;
@@ -192,7 +193,17 @@ async function showRun(id) {
 async function refreshCurrentRun() {
   const id = state.currentRunId;
   if (!id || $('#run-view').hidden) return;
-  const { run } = await api(`/runs/${encodeURIComponent(id)}`);
+  let run;
+  try {
+    ({ run } = await api(`/runs/${encodeURIComponent(id)}`));
+  } catch (error) {
+    // Deleted meanwhile, e.g. from another tab
+    if (error.status === 404 && state.currentRunId === id) {
+      closeViewer();
+      showView('missing');
+    }
+    throw error;
+  }
   if (state.currentRunId !== id) return; // navigated away meanwhile
   renderRun(run);
   if (run.status === 'running' && !state.stream) openStream(id);
@@ -288,6 +299,12 @@ function renderRun(run) {
   retryAll.disabled = false;
   retryAll.textContent = `Retry ${plural(retryCount, 'site')}`;
 
+  const remove = $('#delete-button');
+  // A "still capturing" error is out of date once the run finishes
+  if (remove.hidden && !running) $('#delete-error').hidden = true;
+  remove.hidden = running;
+  remove.disabled = false;
+
   $('#progress-bar').style.width = `${run.sites.length ? (done / run.sites.length) * 100 : 0}%`;
   $('#progress-text').textContent = running
     ? `${done} of ${run.sites.length} done · ${saved} saved${problemCounts(failed, cancelled)}`
@@ -380,9 +397,16 @@ function isRetryable(site) {
   return site.status === 'failed' || site.status === 'cancelled';
 }
 
+// The run on screen, or null while another run is loading in its place. Until
+// then the view and its buttons still show the previous run, and acting on
+// them would retry or delete a run that's no longer selected.
+function shownRun() {
+  return state.run && state.run.id === state.currentRunId ? state.run : null;
+}
+
 // Retry the sites at `indexes`, or every failed and cancelled site if omitted
 async function retrySites(indexes) {
-  const run = state.run;
+  const run = shownRun();
   if (!run) return;
   const buttons = document.querySelectorAll('[data-retry]');
   for (const button of buttons) button.disabled = true; // no double submits
@@ -414,6 +438,39 @@ function showRetryError(error) {
     box.append(h('p', {}, h('a', { href: `#/runs/${error.data.activeRunId}` }, 'View the capture in progress')));
   }
   box.hidden = false;
+}
+
+// Deleting a run removes its folder, screenshots and all. The button is
+// hidden while the run is capturing, and the server refuses then too.
+
+async function deleteRun() {
+  const run = shownRun();
+  if (!run) return;
+  const shots = run.sites.filter((site) => site.status === 'saved').length;
+  const question = shots ? `Delete this run and its ${plural(shots, 'screenshot')}?` : 'Delete this run?';
+  if (!window.confirm(`${question} This can’t be undone.`)) return;
+
+  const button = $('#delete-button');
+  const box = $('#delete-error');
+  button.disabled = true; // no double submits
+  box.hidden = true;
+
+  try {
+    await api(`/runs/${encodeURIComponent(run.id)}`, { method: 'DELETE' });
+  } catch (error) {
+    button.disabled = false;
+    box.replaceChildren(h('p', {}, `Couldn’t delete: ${error.message}`));
+    box.hidden = false;
+    // Most likely the run changed elsewhere: it's capturing again, or another
+    // tab already deleted it (which shows "Run not found")
+    refreshCurrentRun().catch(() => {});
+    return;
+  }
+
+  // Drop it from the history straight away, then catch up with the server
+  state.runs = state.runs.filter((item) => item.id !== run.id);
+  if (state.currentRunId === run.id) location.hash = '#/new';
+  refreshRunList().catch(() => renderRunList());
 }
 
 // Screenshot viewer: a modal carousel over the current run's saved screenshots.
@@ -696,6 +753,7 @@ async function startCapture(event) {
 
 async function cancelRun() {
   const button = $('#cancel-button');
+  if (button.dataset.runId !== shownRun()?.id) return;
   button.disabled = true;
   button.textContent = 'Cancelling…';
   try {
@@ -737,6 +795,7 @@ function bindForm({ limits }) {
   $('#new-run-form').addEventListener('submit', startCapture);
   $('#cancel-button').addEventListener('click', cancelRun);
   $('#retry-all-button').addEventListener('click', () => retrySites());
+  $('#delete-button').addEventListener('click', deleteRun);
 }
 
 async function init() {

@@ -42,6 +42,7 @@ Then open [http://localhost:5055](http://localhost:5055). From there you can:
 - Watch each site's progress live, cancel a run, and browse past runs in the History sidebar.
 - Retry sites that failed or were cancelled with the Retry button on their card, or all of them at once from the run's header. Retried screenshots are saved into the same run.
 - Click a thumbnail to open the screenshot viewer. Scroll to see the whole page, use ← and → (or swipe) to move between screenshots, and press Esc to close. Cmd/Ctrl-click a thumbnail to open the image in a new tab instead.
+- Delete a run you no longer need with the Delete button in its header. This removes its folder and screenshots from your disk, so it can't be undone. A run can't be deleted while it's capturing.
 
 Each web run saves its screenshots in its own folder, `screenshots/<run-id>/`, next to a `run.json` file recording what happened. A web run can hold up to 1,000 sites; use the command line for bigger batches. The server only accepts connections from your own computer.
 
