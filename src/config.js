@@ -2,6 +2,8 @@ const DEFAULTS = {
   width: 1440,
   timeout: 60000,
   headless: true,
+  concurrency: 3,
+  lazyLoad: true,
   csvFile: 'websites.csv',
   outputDir: 'screenshots',
   port: 5055,
@@ -11,6 +13,7 @@ const DEFAULTS = {
 const LIMITS = {
   width: { min: 320, max: 3840 },
   timeout: { min: 1000, max: 300000 },
+  concurrency: { min: 1, max: 5 },
 };
 
 // Web runs rewrite run.json and stream the whole run on every change, so the
@@ -23,6 +26,8 @@ function loadConfig(env = process.env) {
     width: parseInt(env.SCREENSHOT_WIDTH) || DEFAULTS.width,
     headless: env.HEADLESS_MODE !== 'false',
     timeout: parseInt(env.TIMEOUT) || DEFAULTS.timeout,
+    concurrency: parseInt(env.CONCURRENCY) || DEFAULTS.concurrency,
+    lazyLoad: env.LAZY_LOAD !== 'false',
     csvFile: env.CSV_FILE || DEFAULTS.csvFile,
     outputDir: env.OUTPUT_DIR || DEFAULTS.outputDir,
     port: parseInt(env.PORT) || DEFAULTS.port,
@@ -37,6 +42,8 @@ function runDefaults(config) {
     width: clamp(config.width, LIMITS.width),
     timeout: clamp(config.timeout, LIMITS.timeout),
     headless: config.headless,
+    concurrency: clamp(config.concurrency, LIMITS.concurrency),
+    lazyLoad: config.lazyLoad,
   };
 }
 
@@ -57,12 +64,17 @@ function validateRunOptions(input, defaults) {
 
   const width = pickInteger('width', 'Width (px)');
   const timeout = pickInteger('timeout', 'Timeout (ms)');
+  const concurrency = pickInteger('concurrency', 'Sites at once');
   const headless = source.headless ?? defaults.headless;
   if (typeof headless !== 'boolean') {
     errors.push('Headless must be true or false');
   }
+  const lazyLoad = source.lazyLoad ?? defaults.lazyLoad;
+  if (typeof lazyLoad !== 'boolean') {
+    errors.push('Lazy-load handling must be true or false');
+  }
 
-  return { options: { width, timeout, headless }, errors };
+  return { options: { width, timeout, headless, concurrency, lazyLoad }, errors };
 }
 
 module.exports = { DEFAULTS, LIMITS, MAX_SITES_PER_RUN, loadConfig, runDefaults, validateRunOptions };

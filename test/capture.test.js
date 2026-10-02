@@ -159,3 +159,96 @@ test('a browser that fails to launch rejects the run', async (t) => {
   const launch = async () => { throw new Error('Could not find Chrome'); };
   await assert.rejects(captureSites(SITES, baseOptions(dir, launch)), /Could not find Chrome/);
 });
+
+test('captures several sites at once, up to the concurrency limit', async (t) => {
+  const dir = makeTempDir(t);
+  let active = 0;
+  let peak = 0;
+  const { launch } = createFakeLaunch({
+    goto: async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      active -= 1;
+    },
+  });
+  const sites = Array.from({ length: 6 }, (_, i) => ({ name: `Site ${i}`, url: `https://s${i}.example/` }));
+  const events = [];
+
+  const summary = await captureSites(sites, baseOptions(dir, launch, { concurrency: 3, onEvent: (e) => events.push(e) }));
+
+  assert.equal(peak, 3);
+  assert.equal(summary.saved, 6);
+  // Results stay in site order however the captures finish
+  assert.deepEqual(summary.results.map((r) => r.index), [0, 1, 2, 3, 4, 5]);
+  assert.equal(new Set(fs.readdirSync(dir)).size, 6);
+  assert.equal(events.filter((e) => e.type === 'site-done').length, 6);
+});
+
+test('cancelling stops every site in progress and starts no more', async (t) => {
+  const dir = makeTempDir(t);
+  const controller = new AbortController();
+  const { launch } = createFakeLaunch({
+    goto: async () => {
+      controller.abort();
+      throw new Error('Target closed');
+    },
+  });
+  const sites = Array.from({ length: 5 }, (_, i) => ({ name: `Site ${i}`, url: `https://s${i}.example/` }));
+
+  const summary = await captureSites(sites, baseOptions(dir, launch, { concurrency: 2, signal: controller.signal }));
+
+  assert.equal(summary.cancelled, true);
+  assert.deepEqual(summary.results.map((r) => r.status), ['cancelled', 'cancelled']);
+});
+
+test('scrolls each page to load lazy content unless turned off', async (t) => {
+  const on = createFakeLaunch();
+  await captureSites(SITES, baseOptions(makeTempDir(t), on.launch));
+  assert.equal(on.state.scrolled, 3);
+
+  const off = createFakeLaunch();
+  await captureSites(SITES, baseOptions(makeTempDir(t), off.launch, { lazyLoad: false }));
+  assert.equal(off.state.scrolled, 0);
+});
+
+test('a page that cannot be scrolled is still captured', async (t) => {
+  const { launch } = createFakeLaunch({ evaluate: async () => { throw new Error('Execution context was destroyed'); } });
+  const summary = await captureSites(SITES.slice(0, 1), baseOptions(makeTempDir(t), launch));
+  assert.equal(summary.saved, 1);
+});
+
+test('a visible browser captures one site at a time', async (t) => {
+  let active = 0;
+  let peak = 0;
+  const { launch } = createFakeLaunch({
+    goto: async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      active -= 1;
+    },
+  });
+  await captureSites(SITES, baseOptions(makeTempDir(t), launch, { headless: false, concurrency: 3 }));
+  assert.equal(peak, 1);
+});
+
+test('a concurrency below 1 still captures every site', async (t) => {
+  const { launch } = createFakeLaunch();
+  const summary = await captureSites(SITES, baseOptions(makeTempDir(t), launch, { concurrency: -1 }));
+  assert.equal(summary.saved, 3);
+});
+
+test('lazy-load scrolling stays within the per-site timeout', async (t) => {
+  const { launch, state } = createFakeLaunch();
+  await captureSites(SITES.slice(0, 1), baseOptions(makeTempDir(t), launch, { timeout: 2000 }));
+  assert.equal(state.scrollBudgets.length, 1);
+  assert.ok(state.scrollBudgets[0] <= 2000, `budget ${state.scrollBudgets[0]}`);
+});
+
+test('lazy-load scrolling is skipped when loading the page used up the timeout', async (t) => {
+  const { launch, state } = createFakeLaunch({ goto: () => new Promise((resolve) => setTimeout(resolve, 30)) });
+  const summary = await captureSites(SITES.slice(0, 1), baseOptions(makeTempDir(t), launch, { timeout: 20 }));
+  assert.equal(summary.saved, 1);
+  assert.equal(state.scrolled, 0);
+});

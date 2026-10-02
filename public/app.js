@@ -265,7 +265,9 @@ function renderRun(run) {
     plural(run.sites.length, 'site'),
     `${run.options.width}px wide`,
     run.options.headless ? 'headless' : 'browser visible',
-  ].join(' · ');
+    // A visible browser captures one site at a time whatever was chosen
+    run.options.headless && run.options.concurrency > 1 ? `${run.options.concurrency} at once` : null,
+  ].filter(Boolean).join(' · ');
 
   const status = $('#run-status');
   status.textContent = RUN_STATUS_LABELS[run.status] || run.status;
@@ -275,6 +277,10 @@ function renderRun(run) {
   const runAgain = $('#run-again-button');
   runAgain.hidden = running;
   runAgain.href = `#/new?from=${run.id}`;
+
+  const download = $('#download-button');
+  download.hidden = saved === 0;
+  download.href = `/api/runs/${encodeURIComponent(run.id)}/download`;
 
   const cancel = $('#cancel-button');
   cancel.hidden = !running;
@@ -576,15 +582,19 @@ function pickOptions(options) {
   return {
     width: inRange('width') ? given.width : defaults.width,
     timeout: inRange('timeout') ? given.timeout : defaults.timeout,
+    concurrency: inRange('concurrency') ? given.concurrency : defaults.concurrency,
     headless: typeof given.headless === 'boolean' ? given.headless : defaults.headless,
+    lazyLoad: typeof given.lazyLoad === 'boolean' ? given.lazyLoad : defaults.lazyLoad,
   };
 }
 
 // Timeouts are in milliseconds everywhere but the form, which shows seconds
-function setFormOptions({ width, timeout, headless }) {
+function setFormOptions({ width, timeout, concurrency, headless, lazyLoad }) {
   $('#width').value = width;
   $('#timeout').value = Math.round(timeout / 1000);
+  $('#concurrency').value = concurrency;
   $('#headless').checked = headless;
+  $('#lazy-load').checked = lazyLoad;
 }
 
 // Copy a run's sites and options into the form. CSV runs become pasted lines
@@ -679,7 +689,9 @@ async function startCapture(event) {
         options: {
           width: Number($('#width').value),
           timeout: Math.round(Number($('#timeout').value) * 1000),
+          concurrency: Number($('#concurrency').value),
           headless: $('#headless').checked,
+          lazyLoad: $('#lazy-load').checked,
         },
       },
     });
@@ -713,6 +725,10 @@ function bindForm({ limits }) {
   const timeout = $('#timeout');
   timeout.min = limits.timeout.min / 1000;
   timeout.max = limits.timeout.max / 1000;
+
+  const concurrency = $('#concurrency');
+  concurrency.min = limits.concurrency.min;
+  concurrency.max = limits.concurrency.max;
 
   setFormOptions(pickOptions(loadSavedOptions()));
 

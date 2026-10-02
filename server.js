@@ -1,5 +1,7 @@
 const http = require('http');
 const path = require('path');
+const fs = require('fs');
+const archiver = require('archiver');
 const express = require('express');
 const { loadConfig, runDefaults, validateRunOptions, LIMITS, MAX_SITES_PER_RUN } = require('./src/config');
 const { parseUrlList, parseCsv, InputError } = require('./src/sites');
@@ -126,6 +128,37 @@ function createApp({ config, runs }) {
     const run = runs.get(req.params.id);
     if (!run) return res.status(404).json({ error: 'Run not found' });
     res.json({ run });
+  });
+
+  // Every screenshot saved so far in a run, as one ZIP. PNGs are already
+  // compressed, so the archive just stores them.
+  api.get('/runs/:id/download', (req, res, next) => {
+    const run = runs.get(req.params.id);
+    if (!run) return res.status(404).json({ error: 'Run not found' });
+
+    const runDir = path.join(runs.outputDir, run.id);
+    const files = run.sites
+      .filter((site) => site.status === 'saved' && site.file)
+      .map((site) => site.file)
+      .filter((file) => fs.existsSync(path.join(runDir, path.basename(file))));
+    if (files.length === 0) return res.status(404).json({ error: 'This run has no screenshots to download' });
+
+    res.attachment(`screenshooter-${run.id}.zip`);
+    const archive = archiver('zip', { store: true });
+    archive.on('error', (error) => {
+      // Once the ZIP has started streaming the status is sent; all that's left is to cut it off
+      if (res.headersSent) return res.destroy(error);
+      next(error);
+    });
+    res.on('close', () => {
+      if (!res.writableFinished) archive.abort(); // the browser gave up on the download
+    });
+    archive.pipe(res);
+    for (const file of files) {
+      const name = path.basename(file);
+      archive.file(path.join(runDir, name), { name });
+    }
+    archive.finalize();
   });
 
   // Capture failed or cancelled sites of a finished run again. `sites` lists

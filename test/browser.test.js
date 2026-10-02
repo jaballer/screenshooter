@@ -16,6 +16,13 @@ const ROOT = path.join(__dirname, '..');
 const PAGE = '<!doctype html><title>Fixture</title><body style="margin:0"><div style="height:1500px;background:#4f46e5">Hello</div></body>';
 // A full-window hero followed by 1500px of content (issue #2)
 const HERO_PAGE = '<!doctype html><title>Hero</title><style>body{margin:0} .hero{height:100vh}</style><div class="hero">Hero</div><div style="height:1500px">Content</div>';
+// A section that only grows to its real 600px height once it scrolls into view,
+// like a lazy-loaded image. The page is 3000px of spacer plus the placeholder.
+const LAZY_PAGE = `<!doctype html><title>Lazy</title><style>body{margin:0}</style>
+<div style="height:3000px">Spacer</div><div id="lazy" style="height:10px"></div>
+<script>new IntersectionObserver((entries, observer) => {
+  if (entries.some((e) => e.isIntersecting)) { document.getElementById('lazy').style.height = '600px'; observer.disconnect(); }
+}).observe(document.getElementById('lazy'));</script>`;
 // <body> has no box of its own, so it can't be measured
 const CONTENTS_PAGE = '<!doctype html><title>Contents</title><body style="margin:0;display:contents"><div style="height:1500px">Content</div></body>';
 // An SVG document has no <body> at all
@@ -71,6 +78,29 @@ test('a full-window section stays one window tall in the screenshot', { timeout:
   // The 900px window plus the 1500px below it. Measuring the page in a 1px
   // window and then resizing it stretched the hero to 1501px (3001 in total).
   assert.deepEqual(pngSize(path.join(dir, 'Hero.png')), { width: 1440, height: 900 + 1500 });
+});
+
+test('scrolls through the page so lazy-loaded content is in the shot', { timeout: 60000 }, async (t) => {
+  const url = await startFixtureSite(t, LAZY_PAGE);
+  const dir = makeTempDir(t);
+  const options = { outputDir: dir, width: 800, timeout: 15000, headless: true };
+
+  await captureSites([{ name: 'On', url }], { ...options, lazyLoad: true });
+  await captureSites([{ name: 'Off', url }], { ...options, lazyLoad: false });
+
+  assert.equal(pngSize(path.join(dir, 'On.png')).height, 3600);
+  assert.equal(pngSize(path.join(dir, 'Off.png')).height, 3010);
+});
+
+test('lazy content loads in every tab when sites are captured in parallel', { timeout: 60000 }, async (t) => {
+  const url = await startFixtureSite(t, LAZY_PAGE);
+  const dir = makeTempDir(t);
+  const sites = [1, 2, 3, 4].map((n) => ({ name: `Lazy ${n}`, url }));
+
+  const summary = await captureSites(sites, { outputDir: dir, width: 800, timeout: 15000, headless: true, concurrency: 3 });
+
+  assert.equal(summary.saved, 4, JSON.stringify(summary.results));
+  for (const site of sites) assert.equal(pngSize(path.join(dir, `${site.name}.png`)).height, 3600, site.name);
 });
 
 test('pages whose <body> cannot be measured are still captured', { timeout: 60000 }, async (t) => {

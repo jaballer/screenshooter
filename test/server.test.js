@@ -75,7 +75,7 @@ test('refuses requests addressed to other hostnames', async (t) => {
 test('reports defaults and limits', async (t) => {
   const { port } = await startServer(t);
   const res = await request(port, { path: '/api/config' });
-  assert.deepEqual(res.json.defaults, { width: 1440, timeout: 60000, headless: true });
+  assert.deepEqual(res.json.defaults, { width: 1440, timeout: 60000, headless: true, concurrency: 3, lazyLoad: true });
   assert.deepEqual(res.json.limits.width, { min: 320, max: 3840 });
 });
 
@@ -83,11 +83,11 @@ test('out-of-range settings from .env still give the UI valid defaults', async (
   const { port } = await startServer(t, { config: { width: 5000, timeout: 600000 } });
 
   const config = await request(port, { path: '/api/config' });
-  assert.deepEqual(config.json.defaults, { width: 3840, timeout: 300000, headless: true });
+  assert.deepEqual(config.json.defaults, { width: 3840, timeout: 300000, headless: true, concurrency: 3, lazyLoad: true });
 
   const res = await startRun(port, { source: 'urls', text: 'github.com' });
   assert.equal(res.status, 202, res.text);
-  assert.deepEqual(res.json.run.options, { width: 3840, timeout: 300000, headless: true });
+  assert.deepEqual(res.json.run.options, { width: 3840, timeout: 300000, headless: true, concurrency: 3, lazyLoad: true });
 });
 
 test('refuses web runs over the site limit', async (t) => {
@@ -159,13 +159,13 @@ test('runs a capture and serves its screenshots and history', async (t) => {
     source: 'csv',
     filename: 'websites.csv',
     text: 'name,url\nGitHub,github.com\n,https://react.dev\nBad,javascript:alert(1)\n',
-    options: { width: 1280, timeout: 30000, headless: false },
+    options: { width: 1280, timeout: 30000, headless: false, concurrency: 2, lazyLoad: false },
   });
   assert.equal(res.status, 202);
   const { id } = res.json.run;
 
   const run = await waitForStatus(port, id, 'completed');
-  assert.deepEqual(run.options, { width: 1280, timeout: 30000, headless: false });
+  assert.deepEqual(run.options, { width: 1280, timeout: 30000, headless: false, concurrency: 2, lazyLoad: false });
   assert.deepEqual(run.source, { type: 'csv', filename: 'websites.csv' });
   assert.deepEqual(run.sites.map((s) => [s.name, s.status]), [['GitHub', 'saved'], ['react.dev', 'saved']]);
   assert.equal(run.skipped.length, 1);
@@ -177,6 +177,32 @@ test('runs a capture and serves its screenshots and history', async (t) => {
   const list = await request(port, { path: '/api/runs' });
   assert.deepEqual(list.json.runs.map((r) => r.id), [id]);
   assert.equal(list.json.activeRunId, null);
+});
+
+test('downloads a run\'s screenshots as a ZIP', async (t) => {
+  const { port } = await startServer(t);
+  const { json } = await startRun(port, { source: 'csv', text: 'name,url\nGitHub,github.com\nReact,react.dev\n' });
+  await waitForStatus(port, json.run.id, 'completed');
+
+  const res = await request(port, { path: `/api/runs/${json.run.id}/download` });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers['content-type'], 'application/zip');
+  assert.match(res.headers['content-disposition'], new RegExp(`attachment; filename="screenshooter-${json.run.id}\\.zip"`));
+  assert.equal(res.text.slice(0, 2), 'PK');
+  assert.match(res.text, /0\.png/);
+  assert.match(res.text, /1\.png/);
+});
+
+test('has nothing to download for unknown runs or runs without screenshots', async (t) => {
+  const { port } = await startServer(t, { capture: async () => ({ cancelled: false }) });
+  const missing = await request(port, { path: '/api/runs/20200101-000000-abcd/download' });
+  assert.equal(missing.status, 404);
+
+  const { json } = await startRun(port);
+  await waitForStatus(port, json.run.id, 'completed');
+  const empty = await request(port, { path: `/api/runs/${json.run.id}/download` });
+  assert.equal(empty.status, 404);
+  assert.match(empty.json.error, /no screenshots/);
 });
 
 test('a second run is refused while one is in progress', async (t) => {
