@@ -12,7 +12,7 @@ ScreenShooter is a simple, automated website screenshot tool built using Node.js
 - Error handling with detailed logging
 
 ## Requirements
-- Node.js 18 or higher
+- Node.js 22.12 or higher
 - 4GB RAM minimum (8GB recommended for large websites)
 - Storage space for screenshots (varies based on usage)
 
