@@ -238,3 +238,17 @@ test('a concurrency below 1 still captures every site', async (t) => {
   const summary = await captureSites(SITES, baseOptions(makeTempDir(t), launch, { concurrency: -1 }));
   assert.equal(summary.saved, 3);
 });
+
+test('lazy-load scrolling stays within the per-site timeout', async (t) => {
+  const { launch, state } = createFakeLaunch();
+  await captureSites(SITES.slice(0, 1), baseOptions(makeTempDir(t), launch, { timeout: 2000 }));
+  assert.equal(state.scrollBudgets.length, 1);
+  assert.ok(state.scrollBudgets[0] <= 2000, `budget ${state.scrollBudgets[0]}`);
+});
+
+test('lazy-load scrolling is skipped when loading the page used up the timeout', async (t) => {
+  const { launch, state } = createFakeLaunch({ goto: () => new Promise((resolve) => setTimeout(resolve, 30)) });
+  const summary = await captureSites(SITES.slice(0, 1), baseOptions(makeTempDir(t), launch, { timeout: 20 }));
+  assert.equal(summary.saved, 1);
+  assert.equal(state.scrolled, 0);
+});

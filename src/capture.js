@@ -10,11 +10,14 @@ const VIEWPORT_HEIGHT = 900;
 
 // Pages that load images and sections as they scroll into view are scrolled
 // through before the shot, so the screenshot isn't full of empty placeholders.
-// The scroll gives up after LAZY_LOAD_MAX_MS on endless feeds.
+// The scroll gives up after LAZY_LOAD_MAX_MS on endless feeds, and the whole
+// step stays within `budgetMs` so it can't push a site past its timeout.
 const LAZY_LOAD_MAX_MS = 10000;
 const LAZY_LOAD_SETTLE_MS = 5000;
 
-async function loadLazyContent(page) {
+async function loadLazyContent(page, budgetMs) {
+  if (budgetMs <= 0) return;
+  const startedAt = Date.now();
   await page.evaluate((maxMs) => new Promise((resolve) => {
     const startedAt = Date.now();
     let y = 0;
@@ -29,9 +32,10 @@ async function loadLazyContent(page) {
       }
     };
     step();
-  }), LAZY_LOAD_MAX_MS);
+  }), Math.min(LAZY_LOAD_MAX_MS, budgetMs));
   // Let what the scroll triggered finish loading
-  await page.waitForNetworkIdle({ idleTime: 500, timeout: LAZY_LOAD_SETTLE_MS }).catch(() => {});
+  const settleMs = Math.min(LAZY_LOAD_SETTLE_MS, budgetMs - (Date.now() - startedAt));
+  if (settleMs > 0) await page.waitForNetworkIdle({ idleTime: 500, timeout: settleMs }).catch(() => {});
 }
 
 // Capture a full-page screenshot of each site, `concurrency` at a time (one
@@ -88,7 +92,7 @@ async function captureSites(sites, options) {
       await client.send('Emulation.setFocusEmulationEnabled', { enabled: true });
       await page.goto(site.url, { waitUntil: 'networkidle2', timeout });
       // Best effort: a page that resists scrolling still gets its screenshot
-      if (lazyLoad) await loadLazyContent(page).catch(() => {});
+      if (lazyLoad) await loadLazyContent(page, timeout - (Date.now() - startedAt)).catch(() => {});
 
       const filename = allocateFilename(site.name);
       const screenshotPath = path.join(outputDir, filename);

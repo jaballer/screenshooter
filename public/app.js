@@ -265,7 +265,8 @@ function renderRun(run) {
     plural(run.sites.length, 'site'),
     `${run.options.width}px wide`,
     run.options.headless ? 'headless' : 'browser visible',
-    run.options.concurrency > 1 ? `${run.options.concurrency} at once` : null,
+    // A visible browser captures one site at a time whatever was chosen
+    run.options.headless && run.options.concurrency > 1 ? `${run.options.concurrency} at once` : null,
   ].filter(Boolean).join(' · ');
 
   const status = $('#run-status');
